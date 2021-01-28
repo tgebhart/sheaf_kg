@@ -242,7 +242,7 @@ class ModifiedSE(StructuredEmbedding):
 def run(dataset, num_epochs, embedding_dim, loss, edge_stalk_sizes, random_seed):
 
     savename = 'SheafE_nonconstant_diag_{}epochs_{}dim_{}loss_{}seed_{}'.format(num_epochs,embedding_dim,loss,random_seed,timestr)
-    saveloc = os.path.join('/home/gebhart/projects/sheaf_kg/data',dataset,savename)
+    saveloc = os.path.join('../data',dataset,savename)
     esss = np.array(edge_stalk_sizes, dtype='int')
 
     result = pipeline(
@@ -250,6 +250,8 @@ def run(dataset, num_epochs, embedding_dim, loss, edge_stalk_sizes, random_seed)
         dataset=dataset,
         random_seed=random_seed,
         device='gpu',
+        stopper='early',
+        stopper_kwargs=dict(frequency=50, patience=100),
         training_kwargs=dict(num_epochs=num_epochs),
         evaluation_kwargs=dict(),
         model_kwargs=dict(embedding_dim=embedding_dim, edge_stalk_sizes=edge_stalk_sizes),
@@ -275,11 +277,11 @@ if __name__ == '__main__':
                         help='number of training epochs')
     training_args.add_argument('--embedding-dim', type=int, default=embedding_dim,
                         help='entity embedding dimension')
-    training_args.add_argument('--random-seed', type=int, default=random_seed,
+    training_args.add_argument('--seed', type=int, default=random_seed,
                         help='random seed')
     training_args.add_argument('--loss', type=str, default=loss,
                         help='loss function')
 
     args = parser.parse_args()
 
-    run(args.dataset, args.num_epochs, args.embedding_dim, args.loss, args.random_seed)
+    run(args.dataset, args.num_epochs, args.embedding_dim, args.loss, args.seed)
