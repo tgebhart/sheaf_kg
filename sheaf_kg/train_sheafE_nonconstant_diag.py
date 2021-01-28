@@ -32,7 +32,7 @@ import geotorch
 dataset = 'WN18RR'
 num_epochs = 1000
 embedding_dim = 64
-edge_stalk_sizes = [embedding_dim,embedding_dim,20,20,20,20,20,20,embedding_dim,20,embedding_dim]
+edge_stalk_sizes = [1,1,1,1,1,1,1,1,1,1,1]
 random_seed = 1234
 
 loss = 'SoftplusLoss'
@@ -44,7 +44,7 @@ class ModifiedSE(StructuredEmbedding):
         self,
         triples_factory: TriplesFactory,
         embedding_dim: int = 64,
-        edge_stalk_sizes: [int] = [64,64,20,20,20,20,20,20,64,20,64],
+        edge_stalk_sizes: [int] = [1,1,1,1,1,1,1,1,1,1,1],
         alpha: float = 0.1,
         scoring_fct_norm: int = 2,
         loss: Optional[Loss] = None,
@@ -73,8 +73,8 @@ class ModifiedSE(StructuredEmbedding):
 
         # relation 1
         tsize = (edge_stalk_sizes[0],embedding_dim)
+#         emb1l = nn.init.xavier_uniform_(torch.eye(tsize[0],tsize[1], device=preferred_device, requires_grad=True))
         emb1l = nn.init.xavier_uniform_(torch.eye(tsize[0],tsize[1], device=preferred_device, requires_grad=True))
-        # emb1l = torch.eye(tsize[0],tsize[1], device=preferred_device, requires_grad=False)
         emb1r = emb1l
         self.left_embeddings.append(emb1l)
         self.right_embeddings.append(emb1r)
@@ -130,7 +130,7 @@ class ModifiedSE(StructuredEmbedding):
 
         # relation 9
         tsize = (edge_stalk_sizes[8],embedding_dim)
-        emb9l = torch.eye(tsize[0],tsize[1], device=preferred_device, requires_grad=True)
+        emb9l = nn.init.xavier_uniform_(torch.eye(tsize[0],tsize[1], device=preferred_device, requires_grad=True))
         emb9r = emb9l
         self.left_embeddings.append(emb9l)
         self.right_embeddings.append(emb9r)
@@ -144,7 +144,7 @@ class ModifiedSE(StructuredEmbedding):
 
         # relation 11
         tsize = (edge_stalk_sizes[10],embedding_dim)
-        emb11l = torch.eye(tsize[0],tsize[1], device=preferred_device, requires_grad=True)
+        emb11l = nn.init.xavier_uniform_(torch.eye(tsize[0],tsize[1], device=preferred_device, requires_grad=True))
         emb11r = emb11l
         self.left_embeddings.append(emb11l)
         self.right_embeddings.append(emb11r)
@@ -163,8 +163,8 @@ class ModifiedSE(StructuredEmbedding):
             rel_h = self.left_embeddings[ix]
             rel_t = self.right_embeddings[ix]
 
-            proj_h = rel_h @ h
-            proj_t = rel_t @ t
+            proj_h = torch.diagflat(rel_h) @ h
+            proj_t = torch.diagflat(rel_t) @ t
             scores[batch_indices] = -torch.norm(proj_h - proj_t, dim=1, p=self.scoring_fct_norm)**2
 
         return scores
@@ -196,8 +196,8 @@ class ModifiedSE(StructuredEmbedding):
                 proj_t = torch.cat(proj_t_arr, dim=1)
 
             else:
-                proj_h = rel_h @ h
-                proj_t = rel_t @ t_all
+                proj_h = torch.diagflat(rel_h) @ h
+                proj_t = torch.diagflat(rel_t) @ t_all
 
             scores[batch_indices[:,0]] = -torch.norm(proj_h[:, None, :, 0] - proj_t[:, :, :, 0], dim=-1, p=self.scoring_fct_norm)**2
 
@@ -231,8 +231,8 @@ class ModifiedSE(StructuredEmbedding):
                 proj_t = torch.cat(proj_t_arr, dim=1)
 
             else:
-                proj_h = rel_h @ h_all
-                proj_t = rel_t @ t
+                proj_h = torch.diagflat(rel_h) @ h_all
+                proj_t = torch.diagflat(rel_t) @ t
 
             scores[batch_indices[:,0]] = -torch.norm(proj_h[:, :, :, 0] - proj_t[:, None, :, 0], dim=-1, p=self.scoring_fct_norm)**2
 
@@ -241,7 +241,7 @@ class ModifiedSE(StructuredEmbedding):
 
 def run(dataset, num_epochs, embedding_dim, loss, edge_stalk_sizes, random_seed):
 
-    savename = 'SheafE_{}epochs_{}dim_{}loss_{}seed_{}'.format(num_epochs,embedding_dim,loss,random_seed,timestr)
+    savename = 'SheafE_nonconstant_diag_{}epochs_{}dim_{}loss_{}seed_{}'.format(num_epochs,embedding_dim,loss,random_seed,timestr)
     saveloc = os.path.join('/home/gebhart/projects/sheaf_kg/data',dataset,savename)
     esss = np.array(edge_stalk_sizes, dtype='int')
 
@@ -279,11 +279,7 @@ if __name__ == '__main__':
                         help='random seed')
     training_args.add_argument('--loss', type=str, default=loss,
                         help='loss function')
-    training_args.add_argument('--edge_stalk_sizes', nargs='+', help='edge embedding dimension sizes',
-                        required=False, default=edge_stalk_sizes)
-
 
     args = parser.parse_args()
-    ess = [int(es) for es in args.edge_stalk_sizes]
 
-    run(args.dataset, args.num_epochs, args.embedding_dim, args.loss, ess, args.random_seed)
+    run(args.dataset, args.num_epochs, args.embedding_dim, args.loss, args.random_seed)
