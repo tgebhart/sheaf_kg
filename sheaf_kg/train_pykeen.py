@@ -22,7 +22,7 @@ timestr = time.strftime("%Y%m%d-%H%M")
 def run(model, dataset, num_epochs, embedding_dim, loss, training_loop, random_seed):
 
     savename = '{}_{}epochs_{}dim_{}loss_{}seed_{}'.format(model, num_epochs,embedding_dim,loss,random_seed,timestr)
-    saveloc = os.path.join('/home/gebhart/projects/sheaf_kg/data',dataset,savename)
+    saveloc = os.path.join('/home/funkr/gebhart/projects/sheaf_kg/data',dataset,savename)
 
     result = pipeline(
         model=model,
@@ -55,7 +55,7 @@ if __name__ == '__main__':
                         help='number of training epochs')
     training_args.add_argument('--embedding-dim', type=int, default=embedding_dim,
                         help='entity embedding dimension')
-    training_args.add_argument('--random-seed', type=int, default=random_seed,
+    training_args.add_argument('--seed', type=int, default=random_seed,
                         help='random seed')
     training_args.add_argument('--loss', type=str, default=loss,
                         help='loss function')
@@ -67,4 +67,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    run(args.model, args.dataset, args.num_epochs, args.embedding_dim, args.loss, args.training_loop, args.random_seed)
+    run(args.model, args.dataset, args.num_epochs, args.embedding_dim, args.loss, args.training_loop, args.seed)
