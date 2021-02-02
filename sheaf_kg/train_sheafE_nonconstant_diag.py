@@ -24,10 +24,8 @@ from pykeen.typing import DeviceHint
 from pykeen.utils import compose
 
 from torch.nn import functional
+from torch.nn.parameter import Parameter
 from torch import nn
-
-import geotorch
-
 
 dataset = 'WN18RR'
 num_epochs = 1000
@@ -73,78 +71,77 @@ class ModifiedSE(StructuredEmbedding):
 
         # relation 1
         tsize = (edge_stalk_sizes[0],embedding_dim)
-#         emb1l = nn.init.xavier_uniform_(torch.eye(tsize[0],tsize[1], device=preferred_device, requires_grad=True))
-        emb1l = nn.init.xavier_uniform_(torch.eye(tsize[0],tsize[1], device=preferred_device, requires_grad=True))
+        emb1l = Parameter(nn.init.xavier_uniform_(torch.eye(tsize[0],tsize[1], device=preferred_device)),requires_grad=True)
         emb1r = emb1l
         self.left_embeddings.append(emb1l)
         self.right_embeddings.append(emb1r)
 
         # relation 2
         tsize = (edge_stalk_sizes[1],embedding_dim)
-        emb2l = nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device, requires_grad=True))
+        emb2l = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device)),requires_grad=True)
         emb2r = emb2l
         self.left_embeddings.append(emb2l)
         self.right_embeddings.append(emb2r)
 
         # relation 3
         tsize = (edge_stalk_sizes[2],embedding_dim)
-        emb3l = nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device, requires_grad=True))
+        emb3l = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device)), requires_grad=True)
         emb3r = emb3l
         self.left_embeddings.append(emb3l)
         self.right_embeddings.append(emb3r)
 
         # relation 4
         tsize = (edge_stalk_sizes[3],embedding_dim)
-        emb4l = nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device, requires_grad=True))
+        emb4l = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device)), requires_grad=True)
         emb4r = emb4l
         self.left_embeddings.append(emb4l)
         self.right_embeddings.append(emb4r)
 
         # relation 5
         tsize = (edge_stalk_sizes[4],embedding_dim)
-        emb5l = nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device, requires_grad=True))
+        emb5l = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device)),requires_grad=True)
         emb5r = emb5l
         self.left_embeddings.append(emb5l)
         self.right_embeddings.append(emb5r)
 
         # relation 6
         tsize = (edge_stalk_sizes[5],embedding_dim)
-        emb6l = nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device, requires_grad=True))
+        emb6l = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device)),requires_grad=True)
         emb6r = emb6l
         self.left_embeddings.append(emb6l)
         self.right_embeddings.append(emb6r)
 
         # relation 7
         tsize = (edge_stalk_sizes[6],embedding_dim)
-        emb7l = nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device, requires_grad=True))
+        emb7l = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device)),requires_grad=True)
         emb7r = emb7l
         self.left_embeddings.append(emb7l)
         self.right_embeddings.append(emb7r)
 
         # relation 8
         tsize = (edge_stalk_sizes[7],embedding_dim)
-        emb8l = nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device, requires_grad=True))
+        emb8l = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device)),requires_grad=True)
         emb8r = emb8l
         self.left_embeddings.append(emb8l)
         self.right_embeddings.append(emb8r)
 
         # relation 9
         tsize = (edge_stalk_sizes[8],embedding_dim)
-        emb9l = nn.init.xavier_uniform_(torch.eye(tsize[0],tsize[1], device=preferred_device, requires_grad=True))
+        emb9l = Parameter(nn.init.xavier_uniform_(torch.eye(tsize[0],tsize[1], device=preferred_device)),requires_grad=True)
         emb9r = emb9l
         self.left_embeddings.append(emb9l)
         self.right_embeddings.append(emb9r)
 
         # relation 10
         tsize = (edge_stalk_sizes[9],embedding_dim)
-        emb10l = nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device, requires_grad=True))
+        emb10l = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device)),requires_grad=True)
         emb10r = emb10l
         self.left_embeddings.append(emb10l)
         self.right_embeddings.append(emb10r)
 
         # relation 11
         tsize = (edge_stalk_sizes[10],embedding_dim)
-        emb11l = nn.init.xavier_uniform_(torch.eye(tsize[0],tsize[1], device=preferred_device, requires_grad=True))
+        emb11l = Parameter(nn.init.xavier_uniform_(torch.eye(tsize[0],tsize[1], device=preferred_device)),requires_grad=True)
         emb11r = emb11l
         self.left_embeddings.append(emb11l)
         self.right_embeddings.append(emb11r)
@@ -239,7 +236,7 @@ class ModifiedSE(StructuredEmbedding):
         return scores
 
 
-def run(dataset, num_epochs, embedding_dim, loss, edge_stalk_sizes, random_seed):
+def run(dataset, num_epochs, embedding_dim, loss, random_seed):
 
     savename = 'SheafE_nonconstant_diag_{}epochs_{}dim_{}loss_{}seed_{}'.format(num_epochs,embedding_dim,loss,random_seed,timestr)
     saveloc = os.path.join('../data',dataset,savename)
