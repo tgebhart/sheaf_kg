@@ -26,9 +26,6 @@ from pykeen.utils import compose
 from torch.nn import functional
 from torch import nn
 
-import geotorch
-
-
 dataset = 'WN18RR'
 num_epochs = 1000
 embedding_dim = 64
