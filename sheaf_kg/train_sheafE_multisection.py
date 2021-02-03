@@ -147,7 +147,7 @@ def run(dataset, num_epochs, embedding_dim, loss, num_sections, random_seed):
         stopper_kwargs=dict(frequency=50, patience=100),
         training_kwargs=dict(num_epochs=num_epochs),
         evaluation_kwargs=dict(),
-        model_kwargs=dict(embedding_dim=embedding_dim),
+        model_kwargs=dict(embedding_dim=embedding_dim, num_sections=num_sections),
         loss=loss,
         loss_kwargs=dict()
     )
@@ -177,4 +177,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    run(args.dataset, args.num_epochs, args.num_sections, args.loss, args.seed)
+    run(args.dataset, args.num_epochs, args.embedding_dim, args.loss, args.num_sections, args.seed)
