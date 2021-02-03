@@ -24,6 +24,7 @@ from pykeen.typing import DeviceHint
 from pykeen.utils import compose
 
 from torch.nn import functional
+from torch.nn.parameter import Parameter
 from torch import nn
 
 dataset = 'WN18RR'
