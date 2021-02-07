@@ -62,11 +62,9 @@ def compute_costs(L,source_vertices,target_vertices,xS,xT,dv):
     LSS = L[np.ix_(Sidx,Sidx)]
     LST = L[np.ix_(Sidx,Tidx)]
     LTT = L[np.ix_(Tidx,Tidx)]
-    try:
-        const = xS.T @ LSS @ xS
-        lin = xS.T @ LST @ xT
-        quad = np.sum(xT * (LTT @ xT), axis=0)
-    except ValueError:
-        print(xS.shape, LSS.shape, xT.shape, LST.shape)
+
+    const = xS.T @ LSS @ xS
+    lin = xS.T @ LST @ xT
+    quad = np.sum(xT * (LTT @ xT), axis=0)
 
     return const + lin + quad
