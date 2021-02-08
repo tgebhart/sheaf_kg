@@ -25,7 +25,7 @@ loss = 'SoftplusLoss'
 model_map = {'Diag': SheafE_Diag,
             'Multisection': SheafE_Multisection}
 
-def run(model_name, dataset, num_epochs, embedding_dim, loss, training_loop, random_seed, num_sections, model_parameters):
+def run(model_name, dataset, num_epochs, embedding_dim, loss, training_loop, random_seed, num_sections, symmetric, model_parameters):
 
     timestr = time.strftime("%Y%m%d-%H%M")
 
@@ -35,6 +35,7 @@ def run(model_name, dataset, num_epochs, embedding_dim, loss, training_loop, ran
             model_kwargs = json.load(f)
     model_kwargs['embedding_dim'] = embedding_dim
     model_kwargs['num_sections'] = num_sections
+    model_kwargs['symmetric'] = symmetric
 
     if model_name in model_map:
         model_cls = model_map[model_name]
@@ -89,9 +90,11 @@ if __name__ == '__main__':
     training_args.add_argument('--training-loop', type=str, required=False, default=training_loop,
                         choices=['slcwa', 'lcwa'],
                         help='closed world assumption')
+    training_args.add_argument('--symmetric', action='store_true',
+                        help='whether to keep restriction maps equivalent on both sides')
     training_args.add_argument('--model-parameters', type=str, required=False, default=None,
                         help='path to json file of model-specific parameters')
 
     args = parser.parse_args()
 
-    run(args.model, args.dataset, args.num_epochs, args.embedding_dim, args.loss, args.training_loop, args.seed, args.num_sections, args.model_parameters)
+    run(args.model, args.dataset, args.num_epochs, args.embedding_dim, args.loss, args.training_loop, args.seed, args.num_sections, args.symmetric, args.model_parameters)
