@@ -59,8 +59,11 @@ class SheafE_Multisection(_OldAbstractModel):
             self.right_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device, requires_grad=True, dtype=torch.float32)),requires_grad=True)
 
     def get_model_savename(self):
-        # todo
-        return ''
+        if self.symmetric:
+            savestruct = 'SheafE_Multisection_Symmetric_{}embdim_{}esdim_{}nsec_{}norm'
+        else:
+            savestruct = 'SheafE_Multisection_{}embdim_{}esdim_{}sec_{}norm'
+        return savestruct.format(self.embedding_dim, self.edge_stalk_dim, self.num_sections, self.scoring_fct_norm)
 
     def _reset_parameters_(self):  # noqa: D102
         self.ent_embeddings = Parameter(nn.init.xavier_uniform_(self.ent_embeddings))
@@ -159,8 +162,11 @@ class SheafE_Diag(_OldAbstractModel):
             self.right_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device, requires_grad=True, dtype=torch.float32)),requires_grad=True)
 
     def get_model_savename(self):
-        # todo
-        return ''
+        if self.symmetric:
+            savestruct = 'SheafE_Diag_Symmetric_{}embdim_{}nsec_{}norm'
+        else:
+            savestruct = 'SheafE_Diag_{}embdim_{}sec_{}norm'
+        return savestruct.format(self.embedding_dim, self.num_sections, self.scoring_fct_norm)
 
     def _reset_parameters_(self):  # noqa: D102
         self.ent_embeddings = nn.init.xavier_uniform_(self.ent_embeddings)

@@ -25,11 +25,9 @@ loss = 'SoftplusLoss'
 model_map = {'Diag': SheafE_Diag,
             'Multisection': SheafE_Multisection}
 
-def run(model, dataset, num_epochs, embedding_dim, loss, training_loop, random_seed, num_sections, model_parameters):
+def run(model_name, dataset, num_epochs, embedding_dim, loss, training_loop, random_seed, num_sections, model_parameters):
 
     timestr = time.strftime("%Y%m%d-%H%M")
-    savename = 'SheafE_{}_{}epochs_{}dim_{}loss_{}seed_{}'.format(model, num_epochs,embedding_dim,loss,random_seed,timestr)
-    saveloc = os.path.join('../data',dataset,savename)
 
     model_kwargs = {}
     if model_parameters is not None:
@@ -37,13 +35,13 @@ def run(model, dataset, num_epochs, embedding_dim, loss, training_loop, random_s
     model_kwargs['embedding_dim'] = embedding_dim
     model_kwargs['num_sections'] = num_sections
 
-    if model in model_map:
-        model = model_map[model]
+    if model_name in model_map:
+        model_cls = model_map[model_name]
     else:
-        raise ValueError('Model {} not recognized from choices {}'.format(model, list(model_map.keys())))
+        raise ValueError('Model {} not recognized from choices {}'.format(model_name, list(model_map.keys())))
 
     result = pipeline(
-        model=model,
+        model=model_cls,
         dataset=dataset,
         random_seed=random_seed,
         device='gpu',
@@ -58,6 +56,11 @@ def run(model, dataset, num_epochs, embedding_dim, loss, training_loop, random_s
     )
 
     res_df = result.metric_results.to_df()
+
+    model = result.model
+    model_savename = model.get_model_savename()
+    savename = model_savename + '_{}epochs_{}loss_{}'.format(num_epochs,loss,timestr)
+    saveloc = os.path.join('../data',dataset,savename)
 
     res_df.to_csv(saveloc+'.csv')
     result.save_to_directory(saveloc)
