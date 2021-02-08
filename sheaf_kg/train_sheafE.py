@@ -31,7 +31,8 @@ def run(model_name, dataset, num_epochs, embedding_dim, loss, training_loop, ran
 
     model_kwargs = {}
     if model_parameters is not None:
-        model_kwargs = json.load(model_parameters)
+        with open(model_parameters, 'rb') as f:
+            model_kwargs = json.load(f)
     model_kwargs['embedding_dim'] = embedding_dim
     model_kwargs['num_sections'] = num_sections
 
