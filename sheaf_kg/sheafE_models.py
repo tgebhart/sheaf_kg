@@ -60,7 +60,7 @@ class SheafE_Multisection(_OldAbstractModel):
 
     def get_model_savename(self):
         if self.symmetric:
-            savestruct = 'SheafE_Multisection_Symmetric_{}embdim_{}esdim_{}nsec_{}norm'
+            savestruct = 'SheafE_Multisection_Symmetric_{}embdim_{}esdim_{}sec_{}norm'
         else:
             savestruct = 'SheafE_Multisection_{}embdim_{}esdim_{}sec_{}norm'
         return savestruct.format(self.embedding_dim, self.edge_stalk_dim, self.num_sections, self.scoring_fct_norm)
@@ -163,7 +163,7 @@ class SheafE_Diag(_OldAbstractModel):
 
     def get_model_savename(self):
         if self.symmetric:
-            savestruct = 'SheafE_Diag_Symmetric_{}embdim_{}nsec_{}norm'
+            savestruct = 'SheafE_Diag_Symmetric_{}embdim_{}sec_{}norm'
         else:
             savestruct = 'SheafE_Diag_{}embdim_{}sec_{}norm'
         return savestruct.format(self.embedding_dim, self.num_sections, self.scoring_fct_norm)
