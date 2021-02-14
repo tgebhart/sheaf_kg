@@ -28,6 +28,8 @@ class SheafE_Multisection(_OldAbstractModel):
         edge_stalk_dim: int = 64,
         scoring_fct_norm: int = 2,
         symmetric: bool = False,
+        orthogonal: bool = False,
+        alpha_orthogonal: float = 0.1,
         num_sections: int = 1,
         loss: Optional[Loss] = None,
         preferred_device: DeviceHint = None,
@@ -42,36 +44,52 @@ class SheafE_Multisection(_OldAbstractModel):
             random_seed=random_seed,
             regularizer=regularizer,
         )
-        self.symmetric = symmetric
+        # self.num_entities = triples_factory.num_entities
+        # self.num_relations = triples_factory.num_relations
+        self.symmetric = bool(symmetric)
         self.embedding_dim = embedding_dim
         self.edge_stalk_dim = edge_stalk_dim
         self.num_sections = num_sections
         self.scoring_fct_norm = scoring_fct_norm
+        self.orthogonal = bool(orthogonal)
+        self.alpha_orthogonal = alpha_orthogonal
+        self.device = preferred_device
 
-        esize = (triples_factory.num_entities, num_sections, embedding_dim)
-        self.ent_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(esize, device=preferred_device, dtype=torch.float32)),requires_grad=True)
+        self.initialize_entities()
+        self.initialize_relations()
 
-        tsize = (triples_factory.num_relations, edge_stalk_dim, embedding_dim)
-        self.left_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device, dtype=torch.float32)),requires_grad=True)
+    def initialize_entities(self):
+        esize = (self.num_entities, self.embedding_dim, self.num_sections)
+        if self.orthogonal and self.num_sections > 1:
+            # is there a faster way to do this? looping over num entities is expensive
+            orths = torch.empty(esize, device=self.device, dtype=torch.float32)
+            for i in range(esize[0]):
+                orths[i,:,:] = nn.init.orthogonal_(orths[i,:,:])
+            self.ent_embeddings = Parameter(orths, requires_grad=True)
+            self.I = torch.eye(self.num_sections, device=self.device)
+        else:
+            self.ent_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(esize, device=self.device, dtype=torch.float32)),requires_grad=True)
+
+    def initialize_relations(self):
+        tsize = (self.num_relations, self.edge_stalk_dim, self.embedding_dim)
+        self.left_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=self.device, dtype=torch.float32)),requires_grad=True)
         if self.symmetric:
             self.right_embeddings = self.left_embeddings
         else:
-            self.right_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device, requires_grad=True, dtype=torch.float32)),requires_grad=True)
+            self.right_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=self.device, requires_grad=True, dtype=torch.float32)),requires_grad=True)
 
     def get_model_savename(self):
         if self.symmetric:
             savestruct = 'SheafE_Multisection_Symmetric_{}embdim_{}esdim_{}sec_{}norm'
         else:
             savestruct = 'SheafE_Multisection_{}embdim_{}esdim_{}sec_{}norm'
+        if self.orthogonal:
+            savestruct += '_{}orthogonal'.format(self.alpha_orthogonal)
         return savestruct.format(self.embedding_dim, self.edge_stalk_dim, self.num_sections, self.scoring_fct_norm)
 
     def _reset_parameters_(self):  # noqa: D102
-        self.ent_embeddings = Parameter(nn.init.xavier_uniform_(self.ent_embeddings))
-        self.left_embeddings = Parameter(nn.init.xavier_uniform_(self.left_embeddings))
-        if self.symmetric:
-            self.right_embeddings = self.left_embeddings
-        else:
-            self.right_embeddings = nn.init.xavier_uniform_(self.right_embeddings)
+        self.initialize_entities()
+        self.initialize_relations()
 
     def score_hrt(self, hrt_batch: torch.LongTensor) -> torch.FloatTensor:  # noqa: D102
         # Get embeddings
@@ -84,6 +102,12 @@ class SheafE_Multisection(_OldAbstractModel):
         proj_h = rel_h @ h
         proj_t = rel_t @ t
         scores = -torch.norm(proj_h - proj_t, dim=(1,2), p=self.scoring_fct_norm)
+        if self.orthogonal and self.num_sections > 1:
+            ents = torch.cat([h,t],dim=0)
+            I = self.I.reshape((1, self.I.shape[0], self.I.shape[1]))
+            I = I.repeat(ents.shape[0], 1, 1)
+            orth_scores = self.alpha_orthogonal * torch.norm(ents.permute(0,2,1)@ents - I, p=self.scoring_fct_norm)
+            return scores - orth_scores
         return scores
 
     def score_t(self, hr_batch: torch.LongTensor, slice_size: int = None) -> torch.FloatTensor:  # noqa: D102
@@ -132,6 +156,8 @@ class SheafE_Diag(_OldAbstractModel):
         embedding_dim: int = 64,
         scoring_fct_norm: int = 2,
         symmetric: bool = False,
+        orthogonal: bool = False,
+        alpha_orthogonal: float = 0.1,
         num_sections: int = 1,
         loss: Optional[Loss] = None,
         preferred_device: DeviceHint = None,
@@ -146,20 +172,36 @@ class SheafE_Diag(_OldAbstractModel):
             random_seed=random_seed,
             regularizer=regularizer,
         )
-        self.symmetric = symmetric
+        self.symmetric = bool(symmetric)
         self.embedding_dim = embedding_dim
         self.num_sections = num_sections
         self.scoring_fct_norm = scoring_fct_norm
+        self.orthogonal = bool(orthogonal)
+        self.alpha_orthogonal = alpha_orthogonal
+        self.device = preferred_device
 
-        esize = (triples_factory.num_entities, num_sections, embedding_dim)
-        self.ent_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(esize, device=preferred_device, dtype=torch.float32)),requires_grad=True)
+        self.initialize_entities()
+        self.initialize_relations()
 
-        tsize = (triples_factory.num_relations, embedding_dim)
-        self.left_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device, dtype=torch.float32)),requires_grad=True)
+    def initialize_entities(self):
+        esize = (self.num_entities, self.embedding_dim, self.num_sections)
+        if self.orthogonal and self.num_sections > 1:
+            # is there a faster way to do this? looping over num entities is expensive
+            orths = torch.empty(esize, device=self.device, dtype=torch.float32)
+            for i in range(esize[0]):
+                orths[i,:,:] = nn.init.orthogonal_(orths[i,:,:])
+            self.ent_embeddings = Parameter(orths, requires_grad=True)
+            self.I = torch.eye(self.num_sections, device=self.device)
+        else:
+            self.ent_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(esize, device=self.device, dtype=torch.float32)),requires_grad=True)
+
+    def initialize_relations(self):
+        tsize = (self.num_relations, self.embedding_dim)
+        self.left_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=self.device, dtype=torch.float32)),requires_grad=True)
         if self.symmetric:
             self.right_embeddings = self.left_embeddings
         else:
-            self.right_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=preferred_device, requires_grad=True, dtype=torch.float32)),requires_grad=True)
+            self.right_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=self.device, requires_grad=True, dtype=torch.float32)),requires_grad=True)
 
     def get_model_savename(self):
         if self.symmetric:
@@ -169,12 +211,8 @@ class SheafE_Diag(_OldAbstractModel):
         return savestruct.format(self.embedding_dim, self.num_sections, self.scoring_fct_norm)
 
     def _reset_parameters_(self):  # noqa: D102
-        self.ent_embeddings = nn.init.xavier_uniform_(self.ent_embeddings)
-        self.left_embeddings = nn.init.xavier_uniform_(self.left_embeddings)
-        if self.symmetric:
-            self.right_embeddings = self.left_embeddings
-        else:
-            self.right_embeddings = nn.init.xavier_uniform_(self.right_embeddings)
+        self.initialize_entities()
+        self.initialize_relations()
 
     def score_hrt(self, hrt_batch: torch.LongTensor) -> torch.FloatTensor:  # noqa: D102
         # Get embeddings
@@ -188,6 +226,14 @@ class SheafE_Diag(_OldAbstractModel):
         proj_t = (torch.diagflat(rel_t) @ t).view(-1,self.embedding_dim,self.num_sections)
 
         scores = -torch.norm(proj_h - proj_t, dim=(1,2), p=self.scoring_fct_norm)
+        if self.orthogonal and self.num_sections > 1:
+            nh = torch.index_select(self.ent_embeddings, 0, hrt_batch[:, 0]).view(-1, self.embedding_dim, self.num_sections)
+            nt = torch.index_select(self.ent_embeddings, 0, hrt_batch[:, 2]).view(-1, self.embedding_dim, self.num_sections)
+            ents = torch.cat([nh,nt],dim=0)
+            I = self.I.reshape((1, self.I.shape[0], self.I.shape[1]))
+            I = I.repeat(ents.shape[0], 1, 1)
+            orth_scores = self.alpha_orthogonal * torch.norm(ents.permute(0,2,1)@ents - I, p=self.scoring_fct_norm)
+            return scores - orth_scores
         return scores
 
     def score_t(self, hr_batch: torch.LongTensor, slice_size: int = None) -> torch.FloatTensor:  # noqa: D102
