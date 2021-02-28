@@ -21,7 +21,7 @@ timestr = time.strftime("%Y%m%d-%H%M")
 
 def run(model, dataset, num_epochs, embedding_dim, loss, training_loop, random_seed):
 
-    savename = '{}_betae_{}epochs_{}dim_{}loss_{}seed_{}'.format(model, num_epochs,embedding_dim,loss,random_seed,timestr)
+    savename = '{}_betae_{}epochs_{}embdim_{}loss_{}seed_{}'.format(model, num_epochs,embedding_dim,loss,random_seed,timestr)
     saveloc = os.path.join('../data',dataset,savename)
 
     training_path = '../data/{}-betae/train.txt'.format(dataset)

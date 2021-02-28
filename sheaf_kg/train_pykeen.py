@@ -21,7 +21,7 @@ loss = 'SoftplusLoss'
 def run(model, dataset, num_epochs, embedding_dim, loss, training_loop, random_seed):
 
     timestr = time.strftime("%Y%m%d-%H%M")
-    savename = '{}_{}epochs_{}dim_{}loss_{}seed_{}'.format(model, num_epochs,embedding_dim,loss,random_seed,timestr)
+    savename = '{}_{}epochs_{}embdim_{}loss_{}seed_{}'.format(model, num_epochs,embedding_dim,loss,random_seed,timestr)
     saveloc = os.path.join('../data',dataset,savename)
 
     result = pipeline(
@@ -49,7 +49,7 @@ if __name__ == '__main__':
     # Training Hyperparameters
     training_args = parser.add_argument_group('training')
     training_args.add_argument('--dataset', type=str, default='WN18RR',
-                        choices=['WN18RR','WN18','FB15k','FB15k-237','YAGO310'],
+                        choices=['WN18RR','WN18','FB15k','FB15k-237','YAGO310', 'OGBBioKG'],
                         help='dataset (default: WN18RR)')
     training_args.add_argument('--num-epochs', type=int, default=num_epochs,
                         help='number of training epochs')
