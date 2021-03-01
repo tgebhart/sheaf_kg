@@ -663,7 +663,7 @@ class SheafE_Translational(_OldAbstractModel):
 
     def get_model_savename(self):
         savestruct = 'SheafE_Translational_{}embdim_{}esdim_{}sec_{}norm'
-        return savestruct.format(self.embedding_dim, self.num_sections, self.scoring_fct_norm)
+        return savestruct.format(self.embedding_dim, self.edge_stalk_dim, self.num_sections, self.scoring_fct_norm)
 
     def _reset_parameters_(self):  # noqa: D102
         self.initialize_entities()
