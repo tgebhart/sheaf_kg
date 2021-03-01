@@ -665,7 +665,7 @@ class SheafE_Translational(_OldAbstractModel):
         savestruct = 'SheafE_Translational_{}embdim_{}esdim_{}sec_{}norm'
         return savestruct.format(self.embedding_dim, self.edge_stalk_dim, self.num_sections, self.scoring_fct_norm)
 
-    def _reset_parameters_(self):  # noqa: D102
+    def _reset_parameters_(self):
         self.initialize_entities()
         self.initialize_relations()
         self.initialize_edge_cochains()
@@ -692,6 +692,137 @@ class SheafE_Translational(_OldAbstractModel):
 
     def score_t(self, hr_batch: torch.LongTensor, slice_size: int = None) -> torch.FloatTensor:  # noqa: D102
         # Get embeddings
+        h = torch.index_select(self.ent_embeddings, 0, hr_batch[:, 0]).view(-1, self.embedding_dim, self.num_sections)
+        rel_h = torch.index_select(self.left_embeddings, 0, hr_batch[:, 1])
+        c = torch.index_select(self.edge_cochains, 0, hr_batch[:,1]).view(-1, self.edge_stalk_dim, 1)
+        rel_t = torch.index_select(self.right_embeddings, 0, hr_batch[:, 1])
+        rel_t = rel_t.view(-1, 1, self.edge_stalk_dim, self.embedding_dim)
+        t_all = self.ent_embeddings.view(1, -1, self.embedding_dim, self.num_sections)
+
+        if slice_size is not None:
+            raise ValueError('Not implemented')
+
+        else:
+            # Project entities
+            proj_h = rel_h @ h
+            proj_t = rel_t @ t_all
+
+        scores = -torch.norm(proj_h[:, None, :, :] + c[:, None, :, :] - proj_t[:, :, :, :], dim=(-1,-2), p=self.scoring_fct_norm)
+        return scores
+
+    def score_h(self, rt_batch: torch.LongTensor, slice_size: int = None) -> torch.FloatTensor:  # noqa: D102
+        # Get embeddings
+        h_all = self.ent_embeddings.view(1, -1, self.embedding_dim, self.num_sections)
+        rel_h = torch.index_select(self.left_embeddings, 0, rt_batch[:, 0])
+        rel_h = rel_h.view(-1, 1, self.edge_stalk_dim, self.embedding_dim)
+        c = torch.index_select(self.edge_cochains, 0, rt_batch[:,0]).view(-1, self.edge_stalk_dim, 1)
+        rel_t = torch.index_select(self.right_embeddings, 0, rt_batch[:, 0])
+        t = torch.index_select(self.ent_embeddings, 0, rt_batch[:, 1]).view(-1, self.embedding_dim, self.num_sections)
+
+        if slice_size is not None:
+            raise ValueError('Not implemented')
+        else:
+            # Project entities
+            proj_h = rel_h @ h_all
+            proj_t = rel_t @ t
+
+        scores = -torch.norm(proj_h[:, :, :, :] + c[:, None, :, :] - proj_t[:, None, :, :], dim=(-1,-2), p=self.scoring_fct_norm)
+        return scores
+
+
+
+class SheafE_Bilinear(_OldAbstractModel):
+
+    def __init__(
+        self,
+        triples_factory: TriplesFactory,
+        embedding_dim: int = 64,
+        edge_stalk_dim: int = 64,
+        scoring_fct_norm: int = 2,
+        symmetric: bool = True,
+        orthogonal: bool = False,
+        alpha_orthogonal: float = 0.1,
+        num_sections: int = 1,
+        loss: Optional[Loss] = None,
+        preferred_device: DeviceHint = None,
+        random_seed: Optional[int] = None,
+        regularizer: Optional[Regularizer] = None,
+    ) -> None:
+
+        super().__init__(
+            triples_factory=triples_factory,
+            loss=loss,
+            preferred_device=preferred_device,
+            random_seed=random_seed,
+            regularizer=regularizer,
+        )
+        self.symmetric = symmetric
+        self.embedding_dim = embedding_dim
+        self.edge_stalk_dim = edge_stalk_dim
+        self.num_sections = num_sections
+        self.scoring_fct_norm = scoring_fct_norm
+        self.orthogonal = bool(orthogonal)
+        self.alpha_orthogonal = alpha_orthogonal
+        self.device = preferred_device
+
+        self.initialize_entities()
+        self.initialize_relations()
+        self.initialize_edge_cochains()
+
+    def initialize_entities(self):
+        esize = (self.num_entities, self.embedding_dim, self.num_sections)
+        if self.orthogonal and self.num_sections > 1:
+            # is there a faster way to do this? looping over num entities is expensive
+            orths = torch.empty(esize, device=self.device, dtype=torch.float32)
+            for i in range(esize[0]):
+                orths[i,:,:] = nn.init.orthogonal_(orths[i,:,:])
+            self.ent_embeddings = Parameter(orths, requires_grad=True)
+            self.I = torch.eye(self.num_sections, device=self.device)
+        else:
+            self.ent_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(esize, device=self.device, dtype=torch.float32)),requires_grad=True)
+
+    def initialize_relations(self):
+        tsize = (self.num_relations, self.edge_stalk_dim, self.embedding_dim)
+        self.left_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=self.device, dtype=torch.float32)),requires_grad=True)
+        if self.symmetric:
+            self.right_embeddings = self.left_embeddings
+        else:
+            self.right_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=self.device, requires_grad=True, dtype=torch.float32)),requires_grad=True)
+
+    def initialize_edge_cochains(self):
+        tsize = (self.num_relations, self.edge_stalk_dim)
+        self.edge_cochains = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=self.device, dtype=torch.float32)), requires_grad=True)
+
+    def get_model_savename(self):
+        savestruct = 'SheafE_Bilinear_{}embdim_{}esdim_{}sec_{}norm'
+        return savestruct.format(self.embedding_dim, self.edge_stalk_dim, self.num_sections, self.scoring_fct_norm)
+
+    def _reset_parameters_(self):
+        self.initialize_entities()
+        self.initialize_relations()
+        self.initialize_edge_cochains()
+
+    def score_hrt(self, hrt_batch: torch.LongTensor) -> torch.FloatTensor:  # noqa: D102
+        # Get embeddings
+        h = torch.index_select(self.ent_embeddings, 0, hrt_batch[:, 0])
+        rel_h = torch.index_select(self.left_embeddings, 0, hrt_batch[:, 1])
+        rel_t = torch.index_select(self.right_embeddings, 0, hrt_batch[:, 1])
+        t = torch.index_select(self.ent_embeddings, 0, hrt_batch[:, 2])
+        c = torch.index_select(self.edge_cochains, 0, hrt_batch[:,1]).view(-1, self.edge_stalk_dim, 1)
+
+        # Project entities
+        proj_h = rel_h @ h
+        proj_t = rel_t @ t
+        scores = -torch.norm(proj_h + c - proj_t, dim=(1,2), p=self.scoring_fct_norm)
+        if self.orthogonal and self.num_sections > 1:
+            ents = torch.cat([h,t],dim=0)
+            I = self.I.reshape((1, self.I.shape[0], self.I.shape[1]))
+            I = I.repeat(ents.shape[0], 1, 1)
+            orth_scores = self.alpha_orthogonal * torch.norm(ents.permute(0,2,1)@ents - I, p=self.scoring_fct_norm)
+            return scores - orth_scores
+        return scores
+
+    def score_t(self, hr_batch: torch.LongTensor, slice_size: int = None) -> torch.FloatTensor:  # noqa: D102
         # Get embeddings
         h = torch.index_select(self.ent_embeddings, 0, hr_batch[:, 0]).view(-1, self.embedding_dim, self.num_sections)
         rel_h = torch.index_select(self.left_embeddings, 0, hr_batch[:, 1])

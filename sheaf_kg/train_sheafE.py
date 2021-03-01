@@ -9,7 +9,7 @@ import numpy as np
 import pykeen
 import torch
 
-from sheafE_models import SheafE_Multisection, SheafE_Diag, SheafE_Translational
+from sheafE_models import SheafE_Multisection, SheafE_Diag, SheafE_Translational, SheafE_Bilinear
 
 from pykeen.pipeline import pipeline
 
@@ -26,7 +26,8 @@ loss = 'SoftplusLoss'
 
 model_map = {'Diag': SheafE_Diag,
             'Multisection': SheafE_Multisection,
-            'Translational': SheafE_Translational}
+            'Translational': SheafE_Translational,
+            'Bilinear': SheafE_Bilinear}
 
 def run(model_name, dataset, num_epochs, embedding_dim, loss, training_loop,
     random_seed, num_sections, symmetric, orthogonal, alpha_orthogonal, model_parameters):
@@ -91,7 +92,7 @@ if __name__ == '__main__':
     training_args.add_argument('--loss', type=str, default=loss,
                         help='loss function')
     training_args.add_argument('--model', type=str, required=True,
-                        choices=['Multisection', 'Diag', 'Translational'],
+                        choices=['Multisection', 'Diag', 'Translational', 'Bilinear'],
                         help='name of model to train')
     training_args.add_argument('--training-loop', type=str, required=False, default=training_loop,
                         choices=['slcwa', 'lcwa'],
