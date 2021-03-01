@@ -55,9 +55,9 @@ def run(model_name, dataset, num_epochs, embedding_dim, loss, training_loop,
         training_kwargs=dict(num_epochs=num_epochs),
         evaluation_kwargs=dict(),
         model_kwargs=model_kwargs,
-        stopper='early',
+        # stopper='early',
         training_loop=training_loop,
-        stopper_kwargs=dict(frequency=frequency, patience=patience),
+        # stopper_kwargs=dict(frequency=frequency, patience=patience),
         loss=loss,
         loss_kwargs=dict()
     )

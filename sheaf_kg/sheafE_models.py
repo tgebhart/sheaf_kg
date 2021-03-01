@@ -18,7 +18,6 @@ from torch.nn import functional
 from torch.nn.parameter import Parameter
 from torch import nn
 
-
 class SheafE_Multisection(_OldAbstractModel):
 
     def __init__(
