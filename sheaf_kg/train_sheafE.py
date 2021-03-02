@@ -21,6 +21,7 @@ training_loop = 'slcwa'
 frequency = 50
 patience = 100
 alpha_orthogonal = 0.1
+scoring_fct_norm = 2
 
 loss = 'SoftplusLoss'
 
@@ -30,7 +31,7 @@ model_map = {'Diag': SheafE_Diag,
             'Bilinear': SheafE_Bilinear}
 
 def run(model_name, dataset, num_epochs, embedding_dim, loss, training_loop,
-    random_seed, num_sections, symmetric, orthogonal, alpha_orthogonal, model_parameters):
+    random_seed, num_sections, symmetric, orthogonal, alpha_orthogonal, scoring_fct_norm, model_parameters):
 
     timestr = time.strftime("%Y%m%d-%H%M")
 
@@ -43,6 +44,7 @@ def run(model_name, dataset, num_epochs, embedding_dim, loss, training_loop,
     model_kwargs['symmetric'] = symmetric
     model_kwargs['orthogonal'] = orthogonal
     model_kwargs['alpha_orthogonal'] = alpha_orthogonal
+    model_kwargs['scoring_fct_norm'] = scoring_fct_norm
 
     if model_name in model_map:
         model_cls = model_map[model_name]
@@ -103,6 +105,8 @@ if __name__ == '__main__':
                         help='whether to learn orthogonalization of each entity vector (section)')
     training_args.add_argument('--alpha-orthogonal', type=float, default=alpha_orthogonal,
                         help='hyperparameter weighting on orthogonal term of scoring')
+    training_args.add_argument('--scoring-fct-norm', type=int, default=scoring_fct_norm,
+                        help='scoring norm to use')
     training_args.add_argument('--model-parameters', type=str, required=False, default=None,
                         help='path to json file of model-specific parameters')
 
@@ -110,4 +114,4 @@ if __name__ == '__main__':
 
     run(args.model, args.dataset, args.num_epochs, args.embedding_dim, args.loss,
         args.training_loop, args.seed, args.num_sections, args.symmetric,
-        args.orthogonal, args.alpha_orthogonal, args.model_parameters)
+        args.orthogonal, args.alpha_orthogonal, args.scoring_fct_norm, args.model_parameters)
