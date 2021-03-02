@@ -11,7 +11,7 @@ from pykeen.losses import Loss
 from pykeen.nn.init import xavier_uniform_
 from pykeen.regularizers import Regularizer
 from pykeen.triples import TriplesFactory
-from pykeen.typing import DeviceHint
+from pykeen.typing import DeviceHint, Constrainer
 from pykeen.utils import compose
 
 from torch.nn import functional
@@ -34,6 +34,7 @@ class SheafE_Multisection(_OldAbstractModel):
         preferred_device: DeviceHint = None,
         random_seed: Optional[int] = None,
         regularizer: Optional[Regularizer] = None,
+        entity_constrainer: Optional[Constrainer] = functional.normalize
     ) -> None:
 
         super().__init__(
@@ -52,6 +53,7 @@ class SheafE_Multisection(_OldAbstractModel):
         self.orthogonal = bool(orthogonal)
         self.alpha_orthogonal = alpha_orthogonal
         self.device = preferred_device
+        self.entity_constrainer = entity_constrainer
 
         self.initialize_entities()
         self.initialize_relations()
@@ -88,6 +90,11 @@ class SheafE_Multisection(_OldAbstractModel):
     def _reset_parameters_(self):  # noqa: D102
         self.initialize_entities()
         self.initialize_relations()
+
+    def post_parameter_update(self):
+        super().post_parameter_update()
+        if self.entity_constrainer is not None:
+            self.ent_embeddings.data = self.entity_constrainer(self.ent_embeddings.data, dim=1)
 
     def score_hrt(self, hrt_batch: torch.LongTensor) -> torch.FloatTensor:  # noqa: D102
         # Get embeddings
@@ -161,6 +168,7 @@ class SheafE_Diag(_OldAbstractModel):
         preferred_device: DeviceHint = None,
         random_seed: Optional[int] = None,
         regularizer: Optional[Regularizer] = None,
+        entity_constrainer: Optional[Constrainer] = functional.normalize
     ) -> None:
 
         super().__init__(
@@ -177,6 +185,7 @@ class SheafE_Diag(_OldAbstractModel):
         self.orthogonal = bool(orthogonal)
         self.alpha_orthogonal = alpha_orthogonal
         self.device = preferred_device
+        self.entity_constrainer = entity_constrainer
 
         self.initialize_entities()
         self.initialize_relations()
@@ -312,6 +321,7 @@ class SheafE_BioKG(_OldAbstractModel):
         preferred_device: DeviceHint = None,
         random_seed: Optional[int] = None,
         regularizer: Optional[Regularizer] = None,
+        entity_constrainer: Optional[Constrainer] = functional.normalize
     ) -> None:
 
         super().__init__(
@@ -334,6 +344,7 @@ class SheafE_BioKG(_OldAbstractModel):
         self.orthogonal = bool(orthogonal)
         self.alpha_orthogonal = alpha_orthogonal
         self.device = preferred_device
+        self.entity_constrainer = entity_constrainer
 
         self.entity_class_embeddings = []
         self.relation_class_embeddings_left = []
@@ -431,6 +442,12 @@ class SheafE_BioKG(_OldAbstractModel):
     def _reset_parameters_(self):  # noqa: D102
         self.initialize_entities()
         self.initialize_relations()
+
+    def post_parameter_update(self):
+        super().post_parameter_update()
+        if self.entity_constrainer is not None:
+            for eix in range(len(self.entity_class_embeddings)):
+                self.entity_class_embeddings[eix].data = self.entity_constrainer(self.entity_class_embeddings[eix].data, dim=1)
 
     def get_grad_params(self):
         """Get the parameters that require gradients."""
@@ -616,6 +633,7 @@ class SheafE_Translational(_OldAbstractModel):
         preferred_device: DeviceHint = None,
         random_seed: Optional[int] = None,
         regularizer: Optional[Regularizer] = None,
+        entity_constrainer: Optional[Constrainer] = functional.normalize
     ) -> None:
 
         super().__init__(
@@ -633,6 +651,7 @@ class SheafE_Translational(_OldAbstractModel):
         self.orthogonal = bool(orthogonal)
         self.alpha_orthogonal = alpha_orthogonal
         self.device = preferred_device
+        self.entity_constrainer = entity_constrainer
 
         self.initialize_entities()
         self.initialize_relations()
@@ -669,6 +688,12 @@ class SheafE_Translational(_OldAbstractModel):
         self.initialize_entities()
         self.initialize_relations()
         self.initialize_edge_cochains()
+
+    def post_parameter_update(self):
+        super().post_parameter_update()
+        if self.entity_constrainer is not None:
+            self.ent_embeddings.data = self.entity_constrainer(self.ent_embeddings.data, dim=1)
+            self.edge_cochains.data = self.entity_constrainer(self.edge_cochains.data, dim=1)
 
     def score_hrt(self, hrt_batch: torch.LongTensor) -> torch.FloatTensor:  # noqa: D102
         # Get embeddings
@@ -747,6 +772,7 @@ class SheafE_Bilinear(_OldAbstractModel):
         preferred_device: DeviceHint = None,
         random_seed: Optional[int] = None,
         regularizer: Optional[Regularizer] = None,
+        entity_constrainer: Optional[Constrainer] = functional.normalize
     ) -> None:
 
         super().__init__(
@@ -764,6 +790,7 @@ class SheafE_Bilinear(_OldAbstractModel):
         self.orthogonal = bool(orthogonal)
         self.alpha_orthogonal = alpha_orthogonal
         self.device = preferred_device
+        self.entity_constrainer = entity_constrainer
 
         self.initialize_entities()
         self.initialize_relations()
@@ -801,6 +828,12 @@ class SheafE_Bilinear(_OldAbstractModel):
         self.initialize_entities()
         self.initialize_relations()
         self.initialize_edge_cochains()
+
+    def post_parameter_update(self):
+        super().post_parameter_update()
+        if self.entity_constrainer is not None:
+            self.ent_embeddings.data = self.entity_constrainer(self.ent_embeddings.data, dim=1)
+            self.edge_cochains.data = self.entity_constrainer(self.edge_cochains.data, dim=1)
 
     def score_hrt(self, hrt_batch: torch.LongTensor) -> torch.FloatTensor:  # noqa: D102
         # Get embeddings
