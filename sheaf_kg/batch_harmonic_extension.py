@@ -39,7 +39,7 @@ def harmonic_extension(edge_index,restriction_maps,boundary_vertices,interior_ve
     LUB = L[np.ix_(np.arange(nbatch),Uidx,Bidx)]
     LUU = L[np.ix_(np.arange(nbatch),Uidx,Uidx)]
 
-    xU = -torch.linalg.pinv(LUU, rcond=1e-15, hermitian=True) @ LUB @ xB
+    xU = -torch.linalg.pinv(LUU, rcond=1e-10, hermitian=True) @ LUB @ xB
 
 def Kron_reduction(edge_index,restriction_maps,boundary_vertices,interior_vertices):
     L = Laplacian(edge_index,restriction_maps)
@@ -53,14 +53,37 @@ def Kron_reduction(edge_index,restriction_maps,boundary_vertices,interior_vertic
     LUB = L[np.ix_(np.arange(nbatch),Uidx,Bidx)]
     LUU = L[np.ix_(np.arange(nbatch),Uidx,Uidx)]
 
-    schur = LBB - torch.transpose(LUB, 1, 2) @ torch.linalg.pinv(LUU, rcond=1e-15, hermitian=True) @ LUB
+    schur = LBB - torch.transpose(LUB, 1, 2) @ torch.linalg.pinv(LUU, rcond=1e-10, hermitian=True) @ LUB
     return schur
 
+# def compute_costs(L,source_vertices,target_vertices,xS,xT,dv):
+#     """xS should be a matrix of (n_batch, num_source * dv). xT should either be
+#     a matrix of (n_batch, S*dv) or a matrix of (num_targets, dv).
+#     """
+#     nbatch = L.shape[0]
+#
+#     Sidx = get_matrix_indices(source_vertices[0],dv)
+#     Tidx = get_matrix_indices(target_vertices[0],dv)
+#
+#     LSS = L[np.ix_(np.arange(nbatch),Sidx,Sidx)]
+#     LST = L[np.ix_(np.arange(nbatch),Sidx,Tidx)]
+#     LTT = L[np.ix_(np.arange(nbatch),Tidx,Tidx)]
+#
+#     xS = xS.unsqueeze(2)
+#     if xT.shape[0] != xS.shape[0]:
+#         xT = torch.transpose(xT,0,1).unsqueeze(0)
+#     else:
+#         xT = xT.unsqueeze(2)
+#
+#     const = torch.transpose(xS, 1, 2) @ torch.matmul(LSS, xS)
+#     lin = torch.transpose(xS, 1, 2) @ LST @ xT
+#     quad = torch.sum(xT * (LTT @ xT), axis=1).unsqueeze(1)
+#     return (const + lin + quad).squeeze()
+
 def compute_costs(L,source_vertices,target_vertices,xS,xT,dv):
-    # xS should just be a vector with the embeddings of the known entities, xT a (|S|*dv, num_entities)
-    # matrix whose slices contain the embeddings of the entities to be checked.
-    # returns a vector with entries Q([xS; xT[:,i]]), where Q(x) is the quadratic form x^TLx
-    # running time should be linear in the number of entities.
+    """xS should be a matrix of (n_batch, num_source * dv). xT should either be
+    a matrix of (n_batch, S*dv) or a matrix of (num_targets, dv).
+    """
     nbatch = L.shape[0]
 
     Sidx = get_matrix_indices(source_vertices[0],dv)
@@ -69,8 +92,14 @@ def compute_costs(L,source_vertices,target_vertices,xS,xT,dv):
     LSS = L[np.ix_(np.arange(nbatch),Sidx,Sidx)]
     LST = L[np.ix_(np.arange(nbatch),Sidx,Tidx)]
     LTT = L[np.ix_(np.arange(nbatch),Tidx,Tidx)]
-
-    const = torch.transpose(xS.unsqueeze(2), 1, 2) @ torch.matmul(LSS, xS.unsqueeze(2))
-    lin = torch.transpose(xS.unsqueeze(2), 1, 2) @ LST @ xT
+    print('before', xS.shape, xT.shape)
+    xS = xS.unsqueeze(2)
+    if xT.shape[0] != xS.shape[0]:
+        xT = torch.transpose(xT,0,1).unsqueeze(0)
+    else:
+        xT = xT.unsqueeze(2)
+    print('fresh squeezed', xS.shape, xT.shape, LSS.shape, LST.shape, LTT.shape)
+    const = torch.transpose(xS, 1, 2) @ torch.matmul(LSS, xS)
+    lin = torch.transpose(xS, 1, 2) @ LST @ xT
     quad = torch.sum(xT * (LTT @ xT), axis=1).unsqueeze(1)
     return (const + lin + quad).squeeze()

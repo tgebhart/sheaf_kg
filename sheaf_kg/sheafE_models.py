@@ -18,6 +18,9 @@ from torch.nn import functional
 from torch.nn.parameter import Parameter
 from torch import nn
 
+import sheaf_kg.batch_harmonic_extension as harmonic_extension
+
+
 class SheafE_Multisection(_OldAbstractModel):
 
     def __init__(
@@ -893,3 +896,270 @@ class SheafE_Bilinear(_OldAbstractModel):
 
         scores = -torch.norm(proj_h[:, :, :, :] + c[:, None, :, :] - proj_t[:, None, :, :], dim=(-1,-2), p=self.scoring_fct_norm)
         return scores
+
+
+
+
+class SheafE_Multisection_Complex_Queries():
+
+    def __init__(
+        self,
+        num_entities: int,
+        num_relations: int,
+        embedding_dim: int = 64,
+        edge_stalk_dim: int = 64,
+        scoring_fct_norm: int = 2,
+        symmetric: bool = False,
+        orthogonal: bool = False,
+        alpha_orthogonal: float = 0.1,
+        num_sections: int = 1,
+        preferred_device: str = 'cpu',
+        random_seed: Optional[int] = None,
+        entity_constrainer: Optional[Constrainer] = functional.normalize
+    ) -> None:
+
+        if random_seed is not None:
+            torch.manual_seed(random_seed)
+
+        self.num_entities = num_entities
+        self.num_relations = num_relations
+        self.symmetric = bool(symmetric)
+        self.embedding_dim = embedding_dim
+        self.edge_stalk_dim = edge_stalk_dim
+        self.num_sections = num_sections
+        self.scoring_fct_norm = scoring_fct_norm
+        self.orthogonal = bool(orthogonal)
+        self.alpha_orthogonal = alpha_orthogonal
+        self.device = preferred_device
+        self.entity_constrainer = entity_constrainer
+
+        self.query_name_fn_dict = { '1p':self.L_p,
+                                    '2p':self.L_p,
+                                    '3p':self.L_p,
+                                    '2i':self.L_i,
+                                    '3i':self.L_i,
+                                    'ip':self.L_ip,
+                                    'pi':self.L_pi }
+
+        self.initialize_entities()
+        self.initialize_relations()
+
+    def initialize_entities(self):
+        esize = (self.num_entities, self.embedding_dim, self.num_sections)
+        if self.orthogonal and self.num_sections > 1:
+            # is there a faster way to do this? looping over num entities is expensive
+            orths = torch.empty(esize, device=self.device, dtype=torch.float32)
+            for i in range(esize[0]):
+                orths[i,:,:] = nn.init.orthogonal_(orths[i,:,:])
+            self.ent_embeddings = Parameter(orths, requires_grad=True)
+            self.I = torch.eye(self.num_sections, device=self.device)
+        else:
+            self.ent_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(esize, device=self.device, dtype=torch.float32)),requires_grad=True)
+
+    def initialize_relations(self):
+        tsize = (self.num_relations, self.edge_stalk_dim, self.embedding_dim)
+        self.left_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=self.device, dtype=torch.float32)),requires_grad=True)
+        if self.symmetric:
+            self.right_embeddings = self.left_embeddings
+        else:
+            self.right_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=self.device, dtype=torch.float32)),requires_grad=True)
+
+    def get_model_savename(self):
+        if self.symmetric:
+            savestruct = 'SheafE_Complex_Queries_Symmetric_{}embdim_{}esdim_{}sec_{}norm'
+        else:
+            savestruct = 'SheafE_Complex_Queries_{}embdim_{}esdim_{}sec_{}norm'
+        if self.orthogonal:
+            savestruct += '_{}orthogonal'.format(self.alpha_orthogonal)
+        return savestruct.format(self.embedding_dim, self.edge_stalk_dim, self.num_sections, self.scoring_fct_norm)
+
+    def _reset_parameters_(self):  # noqa: D102
+        self.initialize_entities()
+        self.initialize_relations()
+
+    def get_parameters(self):
+        return [self.ent_embeddings, self.left_embeddings, self.right_embeddings]
+
+    def post_parameter_update(self):
+        if self.entity_constrainer is not None:
+            self.ent_embeddings.data = self.entity_constrainer(self.ent_embeddings.data, dim=1)
+
+    def forward_costs(self, query_name, entities, relations, targets, invs=None):
+        return self.query_name_fn_dict[query_name](entities, relations, targets, invs=invs)
+
+    # def L_p(self, entities, relations, targets, invs=None):
+    #     '''query of form ('e', ('r', 'r', ... , 'r')).
+    #     here we assume 2 or more relations are present so 2p or greater
+    #     '''
+    #     all_ents = entities
+    #     all_rels = relations
+    #     all_invs = invs
+    #     n_path_ents = all_rels.shape[1]
+    #     num_queries = all_ents.shape[0]
+    #
+    #     edge_indices = np.concatenate([np.arange(0,n_path_ents)[:,np.newaxis].T, np.arange(1,n_path_ents+1)[:,np.newaxis].T], axis=0)
+    #     edge_indices = torch.LongTensor(np.repeat(edge_indices[np.newaxis, :, :], num_queries, axis=0))
+    #
+    #     left_restrictions = torch.index_select(self.left_embeddings, 0, all_rels.flatten()).view(-1, all_rels.shape[1], self.edge_stalk_dim, self.embedding_dim)
+    #     right_restrictions = torch.index_select(self.right_embeddings, 0, all_rels.flatten()).view(-1, all_rels.shape[1], self.edge_stalk_dim, self.embedding_dim)
+    #
+    #     restrictions = torch.cat((left_restrictions.unsqueeze(2), right_restrictions.unsqueeze(2)), dim=2)
+    #     if all_invs is not None:
+    #         for ainvix in range(all_invs.shape[0]):
+    #             invs = all_invs[ainvix]
+    #             for invix in range(invs.shape[0]):
+    #                 if invs[invix] == -1:
+    #                     tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
+    #                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
+    #                     restrictions[ainvix,invix,1,:,:] = tmp
+    #
+    #     source_embeddings = torch.index_select(self.ent_embeddings, 0, all_ents).view(-1, self.embedding_dim, self.num_sections)
+    #
+    #     B = torch.LongTensor(np.repeat(np.array([0,n_path_ents],np.int)[np.newaxis,:], num_queries, axis=0))
+    #     U = torch.LongTensor(np.repeat(np.array(range(1,n_path_ents),np.int)[np.newaxis,:], num_queries, axis=0))
+    #     source_vertices = torch.LongTensor(np.zeros((num_queries,1), dtype=np.int)).to(self.device)
+    #     target_vertices = torch.LongTensor(np.full((num_queries,1), 1, dtype=np.int)).to(self.device)
+    #     LSchur = harmonic_extension.Kron_reduction(edge_indices, restrictions, B, U).to(self.device)
+    #     target_embeddings = torch.mean(torch.index_select(self.ent_embeddings, 0, targets), -1)
+    #     Q = harmonic_extension.compute_costs(LSchur,source_vertices,target_vertices,torch.mean(source_embeddings, -1).view(num_queries, -1),target_embeddings,source_embeddings.shape[1])
+    #     return Q
+
+    def L_p(self, entities, relations, targets, invs=None):
+        '''query of form ('e', ('r', 'r', ... , 'r')).
+        here we assume 2 or more relations are present so 2p or greater
+        '''
+        all_ents = entities
+        all_rels = relations
+        all_invs = invs
+        n_path_ents = all_rels.shape[1]
+        num_queries = all_ents.shape[0]
+
+        edge_indices = np.concatenate([np.arange(0,n_path_ents)[:,np.newaxis].T, np.arange(1,n_path_ents+1)[:,np.newaxis].T], axis=0)
+        edge_indices = torch.LongTensor(np.repeat(edge_indices[np.newaxis, :, :], num_queries, axis=0))
+
+        left_restrictions = torch.index_select(self.left_embeddings, 0, all_rels.flatten()).view(-1, all_rels.shape[1], self.edge_stalk_dim, self.embedding_dim)
+        right_restrictions = torch.index_select(self.right_embeddings, 0, all_rels.flatten()).view(-1, all_rels.shape[1], self.edge_stalk_dim, self.embedding_dim)
+
+        restrictions = torch.cat((left_restrictions.unsqueeze(2), right_restrictions.unsqueeze(2)), dim=2)
+        if all_invs is not None:
+            for ainvix in range(all_invs.shape[0]):
+                invs = all_invs[ainvix]
+                for invix in range(invs.shape[0]):
+                    if invs[invix] == -1:
+                        tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
+                        restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
+                        restrictions[ainvix,invix,1,:,:] = tmp
+
+        source_embeddings = torch.index_select(self.ent_embeddings, 0, all_ents).view(-1, self.embedding_dim, self.num_sections)
+
+        B = torch.LongTensor(np.repeat(np.array([0,n_path_ents],np.int)[np.newaxis,:], num_queries, axis=0))
+        U = torch.LongTensor(np.repeat(np.array(range(1,n_path_ents),np.int)[np.newaxis,:], num_queries, axis=0))
+        source_vertices = torch.LongTensor(np.zeros((num_queries,1), dtype=np.int)).to(self.device)
+        target_vertices = torch.LongTensor(np.full((num_queries,1), 1, dtype=np.int)).to(self.device)
+        LSchur = harmonic_extension.Kron_reduction(edge_indices, restrictions, B, U).to(self.device)
+        target_embeddings = torch.mean(torch.index_select(self.ent_embeddings, 0, targets), -1)
+        Q = harmonic_extension.compute_costs(LSchur,source_vertices,target_vertices,torch.mean(source_embeddings, -1).view(num_queries, -1),target_embeddings,source_embeddings.shape[1])
+        return Q
+
+
+    def L_i(self, entities, relations, targets, invs=None):
+        '''query of form (('e', ('r',)), ('e', ('r',)), ... , ('e', ('r',)))'''
+        all_ents = entities
+        all_rels = relations
+        all_invs = invs
+        n_ents = all_ents.shape[1]
+        num_intersects = all_ents.shape[1]
+        num_queries = all_ents.shape[0]
+
+        edge_indices = np.concatenate([np.full(n_ents,n_ents)[:,np.newaxis].T, np.arange(0,n_ents)[:,np.newaxis].T], axis=0)
+        edge_indices = torch.LongTensor(np.repeat(edge_indices[np.newaxis, :, :], num_queries, axis=0))
+
+        left_restrictions = torch.index_select(self.left_embeddings, 0, all_rels.flatten()).view(-1,all_rels.shape[1], self.edge_stalk_dim, self.embedding_dim)
+        right_restrictions = torch.index_select(self.right_embeddings, 0, all_rels.flatten()).view(-1,all_rels.shape[1], self.edge_stalk_dim, self.embedding_dim)
+
+        restrictions = torch.cat((left_restrictions.unsqueeze(2), right_restrictions.unsqueeze(2)), dim=2)
+        if all_invs is not None:
+            for ainvix in range(len(all_invs)):
+                invs = all_invs[ainvix]
+                for invix in range(len(invs)):
+                    if invs[invix] == 1:
+                        tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
+                        restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
+                        restrictions[ainvix,invix,1,:,:] = tmp
+
+        source_embeddings = torch.index_select(self.ent_embeddings, 0, all_ents.flatten()).view(-1, self.embedding_dim, self.num_sections)
+
+        L = harmonic_extension.Laplacian(edge_indices, restrictions).to(self.device)
+        source_vertices = torch.LongTensor(np.repeat(np.arange(n_ents)[np.newaxis,:], num_queries, axis=0)).to(self.device)
+        target_vertices = torch.LongTensor(np.full((num_queries, 1),n_ents, dtype=np.int)).to(self.device)
+        target_embeddings = torch.mean(torch.index_select(self.ent_embeddings, 0, targets), -1)
+        Q = harmonic_extension.compute_costs(L,source_vertices,target_vertices,torch.mean(source_embeddings, -1).view(num_queries, -1),target_embeddings,source_embeddings.shape[1])
+        return Q
+
+    def L_ip(self, entities, relations, targets, invs=None):
+        '''query of form ((('e', ('r',)), ('e', ('r',))), ('r',))'''
+        all_ents = entities
+        all_rels = relations
+        all_invs = invs
+        n_ents = all_ents.shape[1]
+        num_queries = all_ents.shape[0]
+
+        edge_indices = torch.LongTensor(np.repeat(np.array([[0,2],[1,2],[2,3]],np.int).T[np.newaxis,:,:], num_queries, axis=0))
+
+        left_restrictions = torch.index_select(self.left_embeddings, 0, all_rels.flatten()).view(-1, all_rels.shape[1], self.edge_stalk_dim, self.embedding_dim)
+        right_restrictions = torch.index_select(self.right_embeddings, 0, all_rels.flatten()).view(-1, all_rels.shape[1], self.edge_stalk_dim, self.embedding_dim)
+
+        restrictions = torch.cat((left_restrictions.unsqueeze(2), right_restrictions.unsqueeze(2)), dim=2)
+        if all_invs is not None:
+            for ainvix in range(all_invs.shape[0]):
+                invs = all_invs[ainvix]
+                for invix in range(invs.shape[0]):
+                    if invs[invix] == -1:
+                        tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
+                        restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
+                        restrictions[ainvix,invix,1,:,:] = tmp
+
+        source_embeddings = torch.index_select(self.ent_embeddings, 0, all_ents.flatten()).view(-1, self.embedding_dim, self.num_sections)
+
+        B = torch.LongTensor(np.repeat(np.array([0,2,3],dtype=np.int)[np.newaxis,:], num_queries, axis=0))
+        U = torch.LongTensor(np.full((num_queries,1), 1, dtype=np.int))
+        source_vertices = torch.LongTensor(np.repeat(np.array([0,1], dtype=np.int)[np.newaxis,:], num_queries, axis=0)).to(self.device)
+        target_vertices = torch.LongTensor(np.full((num_queries,1), 2, dtype=np.int)).to(self.device)
+        LSchur = harmonic_extension.Kron_reduction(edge_indices, restrictions, B, U).to(self.device)
+        target_embeddings = torch.mean(torch.index_select(self.ent_embeddings, 0, targets), -1)
+        Q = harmonic_extension.compute_costs(LSchur,source_vertices,target_vertices,torch.mean(source_embeddings, -1).view(num_queries, -1),target_embeddings,source_embeddings.shape[1])
+        return Q
+
+    def L_pi(self, entities, relations, targets, invs=None):
+        '''query of form (('e', ('r', 'r')), ('e', ('r',)))'''
+        all_ents = entities
+        all_rels = relations
+        all_invs = invs
+        n_ents = all_ents.shape[1]
+        num_queries = all_ents.shape[0]
+
+        edge_indices = torch.LongTensor(np.repeat(np.array([[0,2],[2,3],[1,3]],np.int).T[np.newaxis,:,:], num_queries, axis=0))
+
+        left_restrictions = torch.index_select(self.left_embeddings, 0, all_rels.flatten()).view(-1, all_rels.shape[1], self.edge_stalk_dim, self.embedding_dim)
+        right_restrictions = torch.index_select(self.right_embeddings, 0, all_rels.flatten()).view(-1, all_rels.shape[1], self.edge_stalk_dim, self.embedding_dim)
+
+        restrictions = torch.cat((left_restrictions.unsqueeze(2), right_restrictions.unsqueeze(2)), dim=2)
+        if all_invs is not None:
+            for ainvix in range(all_invs.shape[0]):
+                invs = all_invs[ainvix]
+                for invix in range(invs.shape[0]):
+                    if invs[invix] == -1:
+                        tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
+                        restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
+                        restrictions[ainvix,invix,1,:,:] = tmp
+
+        source_embeddings = torch.index_select(self.ent_embeddings, 0, all_ents.flatten()).view(-1, self.embedding_dim, self.num_sections)
+
+        B = torch.LongTensor(np.repeat(np.array([0,1,3], dtype=np.int)[np.newaxis, :], num_queries, axis=0))
+        U = torch.LongTensor(np.full((num_queries, 1), 2, dtype=np.int))
+        source_vertices = torch.LongTensor(np.repeat(np.array([0,1], dtype=np.int).T[np.newaxis,:], num_queries, axis=0)).to(self.device)
+        target_vertices = torch.LongTensor(np.full((num_queries,1), 2, dtype=np.int)).to(self.device)
+        LSchur = harmonic_extension.Kron_reduction(edge_indices, restrictions, B, U).to(self.device)
+        target_embeddings = torch.mean(torch.index_select(self.ent_embeddings, 0, targets), -1)
+        Q = harmonic_extension.compute_costs(LSchur,source_vertices,target_vertices,torch.mean(source_embeddings, -1).view(num_queries, -1),target_embeddings,source_embeddings.shape[1])
+        return Q
