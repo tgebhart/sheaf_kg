@@ -56,30 +56,6 @@ def Kron_reduction(edge_index,restriction_maps,boundary_vertices,interior_vertic
     schur = LBB - torch.transpose(LUB, 1, 2) @ torch.linalg.pinv(LUU, rcond=1e-10, hermitian=True) @ LUB
     return schur
 
-# def compute_costs(L,source_vertices,target_vertices,xS,xT,dv):
-#     """xS should be a matrix of (n_batch, num_source * dv). xT should either be
-#     a matrix of (n_batch, S*dv) or a matrix of (num_targets, dv).
-#     """
-#     nbatch = L.shape[0]
-#
-#     Sidx = get_matrix_indices(source_vertices[0],dv)
-#     Tidx = get_matrix_indices(target_vertices[0],dv)
-#
-#     LSS = L[np.ix_(np.arange(nbatch),Sidx,Sidx)]
-#     LST = L[np.ix_(np.arange(nbatch),Sidx,Tidx)]
-#     LTT = L[np.ix_(np.arange(nbatch),Tidx,Tidx)]
-#
-#     xS = xS.unsqueeze(2)
-#     if xT.shape[0] != xS.shape[0]:
-#         xT = torch.transpose(xT,0,1).unsqueeze(0)
-#     else:
-#         xT = xT.unsqueeze(2)
-#
-#     const = torch.transpose(xS, 1, 2) @ torch.matmul(LSS, xS)
-#     lin = torch.transpose(xS, 1, 2) @ LST @ xT
-#     quad = torch.sum(xT * (LTT @ xT), axis=1).unsqueeze(1)
-#     return (const + lin + quad).squeeze()
-
 def compute_costs(L,source_vertices,target_vertices,xS,xT,dv):
     """xS should be a matrix of (n_batch, num_source * dv). xT should either be
     a matrix of (n_batch, S*dv) or a matrix of (num_targets, dv).
@@ -92,14 +68,16 @@ def compute_costs(L,source_vertices,target_vertices,xS,xT,dv):
     LSS = L[np.ix_(np.arange(nbatch),Sidx,Sidx)]
     LST = L[np.ix_(np.arange(nbatch),Sidx,Tidx)]
     LTT = L[np.ix_(np.arange(nbatch),Tidx,Tidx)]
-    print('before', xS.shape, xT.shape)
-    xS = xS.unsqueeze(2)
-    if xT.shape[0] != xS.shape[0]:
-        xT = torch.transpose(xT,0,1).unsqueeze(0)
+
+    if xS.shape[0] != xT.shape[0]:
+        const = torch.diagonal(torch.transpose(xS, -2, -1) @ LSS @ xS, dim1=-2, dim2=-1)
+        xT = xT.unsqueeze(1)
+        lin = torch.diagonal(torch.transpose(xS, -2, -1) @ LST @ xT, dim1=-2, dim2=-1)
+        inner = (LTT @ xT)
+        quad = torch.sum(xT * (LTT @ xT), axis=2)
+        return torch.transpose((const[None, :, :] + lin + quad), 0, 1)
     else:
-        xT = xT.unsqueeze(2)
-    print('fresh squeezed', xS.shape, xT.shape, LSS.shape, LST.shape, LTT.shape)
-    const = torch.transpose(xS, 1, 2) @ torch.matmul(LSS, xS)
-    lin = torch.transpose(xS, 1, 2) @ LST @ xT
-    quad = torch.sum(xT * (LTT @ xT), axis=1).unsqueeze(1)
-    return (const + lin + quad).squeeze()
+        const = torch.diagonal(torch.transpose(xS, -2, -1) @ LSS @ xS, dim1=-2, dim2=-1)
+        lin = torch.diagonal(torch.transpose(xS, -2, -1) @ LST @ xT, dim1=-2, dim2=-1)
+        quad = torch.sum(xT * (LTT @ xT), axis=1)
+        return const + lin + quad

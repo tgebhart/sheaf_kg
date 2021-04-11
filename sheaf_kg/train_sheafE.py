@@ -9,7 +9,8 @@ import numpy as np
 import pykeen
 import torch
 
-from sheafE_models import SheafE_Multisection, SheafE_Diag, SheafE_Translational, SheafE_Bilinear
+from sheafE_models import SheafE_Multisection, SheafE_Diag, SheafE_Translational, \
+                        SheafE_Bilinear, SheafE_Distributional_Normal, SheafE_Distributional_Beta
 
 from pykeen.pipeline import pipeline
 
@@ -20,15 +21,18 @@ random_seed = 1234
 training_loop = 'slcwa'
 frequency = 50
 patience = 100
+num_sections = None
 alpha_orthogonal = 0.1
-scoring_fct_norm = 2
+scoring_fct_norm = None
 
 loss = 'SoftplusLoss'
 
 model_map = {'Diag': SheafE_Diag,
             'Multisection': SheafE_Multisection,
             'Translational': SheafE_Translational,
-            'Bilinear': SheafE_Bilinear}
+            'Bilinear': SheafE_Bilinear,
+            'Distributional_Normal': SheafE_Distributional_Normal,
+            'Distributional_Beta': SheafE_Distributional_Beta}
 
 def run(model_name, dataset, num_epochs, embedding_dim, loss, training_loop,
     random_seed, num_sections, symmetric, orthogonal, alpha_orthogonal, scoring_fct_norm, model_parameters):
@@ -39,12 +43,18 @@ def run(model_name, dataset, num_epochs, embedding_dim, loss, training_loop,
     if model_parameters is not None:
         with open(model_parameters, 'rb') as f:
             model_kwargs = json.load(f)
+    # these should be model agnostic
     model_kwargs['embedding_dim'] = embedding_dim
-    model_kwargs['num_sections'] = num_sections
     model_kwargs['symmetric'] = symmetric
-    model_kwargs['orthogonal'] = orthogonal
-    model_kwargs['alpha_orthogonal'] = alpha_orthogonal
-    model_kwargs['scoring_fct_norm'] = scoring_fct_norm
+    # these should be model-specific and the args need to be thrown if desired to use.
+    if num_sections is not None:
+        model_kwargs['num_sections'] = num_sections
+    if orthogonal:
+        model_kwargs['orthogonal'] = orthogonal
+        model_kwargs['alpha_orthogonal'] = alpha_orthogonal
+
+    if scoring_fct_norm is not None:
+        model_kwargs['scoring_fct_norm'] = scoring_fct_norm
 
     if model_name in model_map:
         model_cls = model_map[model_name]
@@ -88,14 +98,14 @@ if __name__ == '__main__':
                         help='number of training epochs')
     training_args.add_argument('--embedding-dim', type=int, default=embedding_dim,
                         help='entity embedding dimension')
-    training_args.add_argument('--num-sections', type=int, default=1,
+    training_args.add_argument('--num-sections', type=int, default=num_sections,
                         help='number of simultaneous sections to learn')
     training_args.add_argument('--seed', type=int, default=random_seed,
                         help='random seed')
     training_args.add_argument('--loss', type=str, default=loss,
                         help='loss function')
     training_args.add_argument('--model', type=str, required=True,
-                        choices=['Multisection', 'Diag', 'Translational', 'Bilinear'],
+                        choices=['Multisection', 'Diag', 'Translational', 'Bilinear', 'Distributional_Normal', 'Distributional_Beta'],
                         help='name of model to train')
     training_args.add_argument('--training-loop', type=str, required=False, default=training_loop,
                         choices=['slcwa', 'lcwa'],

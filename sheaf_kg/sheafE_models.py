@@ -17,6 +17,7 @@ from pykeen.utils import compose
 from torch.nn import functional
 from torch.nn.parameter import Parameter
 from torch import nn
+import torch.distributions as distributions
 
 import sheaf_kg.batch_harmonic_extension as harmonic_extension
 
@@ -987,42 +988,18 @@ class SheafE_Multisection_Complex_Queries():
     def forward_costs(self, query_name, entities, relations, targets, invs=None):
         return self.query_name_fn_dict[query_name](entities, relations, targets, invs=invs)
 
-    # def L_p(self, entities, relations, targets, invs=None):
-    #     '''query of form ('e', ('r', 'r', ... , 'r')).
-    #     here we assume 2 or more relations are present so 2p or greater
-    #     '''
-    #     all_ents = entities
-    #     all_rels = relations
-    #     all_invs = invs
-    #     n_path_ents = all_rels.shape[1]
-    #     num_queries = all_ents.shape[0]
-    #
-    #     edge_indices = np.concatenate([np.arange(0,n_path_ents)[:,np.newaxis].T, np.arange(1,n_path_ents+1)[:,np.newaxis].T], axis=0)
-    #     edge_indices = torch.LongTensor(np.repeat(edge_indices[np.newaxis, :, :], num_queries, axis=0))
-    #
-    #     left_restrictions = torch.index_select(self.left_embeddings, 0, all_rels.flatten()).view(-1, all_rels.shape[1], self.edge_stalk_dim, self.embedding_dim)
-    #     right_restrictions = torch.index_select(self.right_embeddings, 0, all_rels.flatten()).view(-1, all_rels.shape[1], self.edge_stalk_dim, self.embedding_dim)
-    #
-    #     restrictions = torch.cat((left_restrictions.unsqueeze(2), right_restrictions.unsqueeze(2)), dim=2)
-    #     if all_invs is not None:
-    #         for ainvix in range(all_invs.shape[0]):
-    #             invs = all_invs[ainvix]
-    #             for invix in range(invs.shape[0]):
-    #                 if invs[invix] == -1:
-    #                     tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
-    #                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
-    #                     restrictions[ainvix,invix,1,:,:] = tmp
-    #
-    #     source_embeddings = torch.index_select(self.ent_embeddings, 0, all_ents).view(-1, self.embedding_dim, self.num_sections)
-    #
-    #     B = torch.LongTensor(np.repeat(np.array([0,n_path_ents],np.int)[np.newaxis,:], num_queries, axis=0))
-    #     U = torch.LongTensor(np.repeat(np.array(range(1,n_path_ents),np.int)[np.newaxis,:], num_queries, axis=0))
-    #     source_vertices = torch.LongTensor(np.zeros((num_queries,1), dtype=np.int)).to(self.device)
-    #     target_vertices = torch.LongTensor(np.full((num_queries,1), 1, dtype=np.int)).to(self.device)
-    #     LSchur = harmonic_extension.Kron_reduction(edge_indices, restrictions, B, U).to(self.device)
-    #     target_embeddings = torch.mean(torch.index_select(self.ent_embeddings, 0, targets), -1)
-    #     Q = harmonic_extension.compute_costs(LSchur,source_vertices,target_vertices,torch.mean(source_embeddings, -1).view(num_queries, -1),target_embeddings,source_embeddings.shape[1])
-    #     return Q
+    def score_query(self, query_name, entities, relations, targets, invs=None):
+        Q = self.forward_costs(query_name, entities, relations, targets, invs=invs)
+        score = -torch.linalg.norm(Q, ord=self.scoring_fct_norm, dim=(-1))
+        if self.orthogonal and self.num_sections > 1:
+            h = torch.index_select(self.ent_embeddings, 0, entities.flatten())
+            t = torch.index_select(self.ent_embeddings, 0, targets)
+            ents = torch.cat([h,t],dim=0)
+            I = self.I.reshape((1, self.I.shape[0], self.I.shape[1]))
+            # I = I.repeat(ents.shape[0], 1, 1)
+            orth_scores = self.alpha_orthogonal * torch.norm(ents.permute(0,2,1)@ents - I, p=self.scoring_fct_norm)
+            return score - orth_scores
+        return score
 
     def L_p(self, entities, relations, targets, invs=None):
         '''query of form ('e', ('r', 'r', ... , 'r')).
@@ -1050,15 +1027,15 @@ class SheafE_Multisection_Complex_Queries():
                         restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                         restrictions[ainvix,invix,1,:,:] = tmp
 
-        source_embeddings = torch.index_select(self.ent_embeddings, 0, all_ents).view(-1, self.embedding_dim, self.num_sections)
+        source_embeddings = torch.index_select(self.ent_embeddings, 0, all_ents)
 
         B = torch.LongTensor(np.repeat(np.array([0,n_path_ents],np.int)[np.newaxis,:], num_queries, axis=0))
         U = torch.LongTensor(np.repeat(np.array(range(1,n_path_ents),np.int)[np.newaxis,:], num_queries, axis=0))
         source_vertices = torch.LongTensor(np.zeros((num_queries,1), dtype=np.int)).to(self.device)
         target_vertices = torch.LongTensor(np.full((num_queries,1), 1, dtype=np.int)).to(self.device)
         LSchur = harmonic_extension.Kron_reduction(edge_indices, restrictions, B, U).to(self.device)
-        target_embeddings = torch.mean(torch.index_select(self.ent_embeddings, 0, targets), -1)
-        Q = harmonic_extension.compute_costs(LSchur,source_vertices,target_vertices,torch.mean(source_embeddings, -1).view(num_queries, -1),target_embeddings,source_embeddings.shape[1])
+        target_embeddings = torch.index_select(self.ent_embeddings, 0, targets)
+        Q = harmonic_extension.compute_costs(LSchur,source_vertices,target_vertices,source_embeddings,target_embeddings,self.embedding_dim)
         return Q
 
 
@@ -1087,13 +1064,13 @@ class SheafE_Multisection_Complex_Queries():
                         restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                         restrictions[ainvix,invix,1,:,:] = tmp
 
-        source_embeddings = torch.index_select(self.ent_embeddings, 0, all_ents.flatten()).view(-1, self.embedding_dim, self.num_sections)
+        source_embeddings = torch.index_select(self.ent_embeddings, 0, all_ents.flatten()).view(all_ents.shape[0], -1, self.num_sections)
 
         L = harmonic_extension.Laplacian(edge_indices, restrictions).to(self.device)
         source_vertices = torch.LongTensor(np.repeat(np.arange(n_ents)[np.newaxis,:], num_queries, axis=0)).to(self.device)
         target_vertices = torch.LongTensor(np.full((num_queries, 1),n_ents, dtype=np.int)).to(self.device)
-        target_embeddings = torch.mean(torch.index_select(self.ent_embeddings, 0, targets), -1)
-        Q = harmonic_extension.compute_costs(L,source_vertices,target_vertices,torch.mean(source_embeddings, -1).view(num_queries, -1),target_embeddings,source_embeddings.shape[1])
+        target_embeddings = torch.index_select(self.ent_embeddings, 0, targets).view(-1, self.embedding_dim, self.num_sections)
+        Q = harmonic_extension.compute_costs(L,source_vertices,target_vertices,source_embeddings,target_embeddings,self.embedding_dim)
         return Q
 
     def L_ip(self, entities, relations, targets, invs=None):
@@ -1119,15 +1096,15 @@ class SheafE_Multisection_Complex_Queries():
                         restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                         restrictions[ainvix,invix,1,:,:] = tmp
 
-        source_embeddings = torch.index_select(self.ent_embeddings, 0, all_ents.flatten()).view(-1, self.embedding_dim, self.num_sections)
+        source_embeddings = torch.index_select(self.ent_embeddings, 0, all_ents.flatten()).view(all_ents.shape[0], -1, self.num_sections)
 
         B = torch.LongTensor(np.repeat(np.array([0,2,3],dtype=np.int)[np.newaxis,:], num_queries, axis=0))
         U = torch.LongTensor(np.full((num_queries,1), 1, dtype=np.int))
         source_vertices = torch.LongTensor(np.repeat(np.array([0,1], dtype=np.int)[np.newaxis,:], num_queries, axis=0)).to(self.device)
         target_vertices = torch.LongTensor(np.full((num_queries,1), 2, dtype=np.int)).to(self.device)
         LSchur = harmonic_extension.Kron_reduction(edge_indices, restrictions, B, U).to(self.device)
-        target_embeddings = torch.mean(torch.index_select(self.ent_embeddings, 0, targets), -1)
-        Q = harmonic_extension.compute_costs(LSchur,source_vertices,target_vertices,torch.mean(source_embeddings, -1).view(num_queries, -1),target_embeddings,source_embeddings.shape[1])
+        target_embeddings = torch.index_select(self.ent_embeddings, 0, targets).view(-1, self.embedding_dim, self.num_sections)
+        Q = harmonic_extension.compute_costs(LSchur,source_vertices,target_vertices,source_embeddings,target_embeddings,self.embedding_dim)
         return Q
 
     def L_pi(self, entities, relations, targets, invs=None):
@@ -1153,13 +1130,325 @@ class SheafE_Multisection_Complex_Queries():
                         restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                         restrictions[ainvix,invix,1,:,:] = tmp
 
-        source_embeddings = torch.index_select(self.ent_embeddings, 0, all_ents.flatten()).view(-1, self.embedding_dim, self.num_sections)
+        source_embeddings = torch.index_select(self.ent_embeddings, 0, all_ents.flatten()).view(all_ents.shape[0], -1, self.num_sections)
 
         B = torch.LongTensor(np.repeat(np.array([0,1,3], dtype=np.int)[np.newaxis, :], num_queries, axis=0))
         U = torch.LongTensor(np.full((num_queries, 1), 2, dtype=np.int))
         source_vertices = torch.LongTensor(np.repeat(np.array([0,1], dtype=np.int).T[np.newaxis,:], num_queries, axis=0)).to(self.device)
         target_vertices = torch.LongTensor(np.full((num_queries,1), 2, dtype=np.int)).to(self.device)
         LSchur = harmonic_extension.Kron_reduction(edge_indices, restrictions, B, U).to(self.device)
-        target_embeddings = torch.mean(torch.index_select(self.ent_embeddings, 0, targets), -1)
-        Q = harmonic_extension.compute_costs(LSchur,source_vertices,target_vertices,torch.mean(source_embeddings, -1).view(num_queries, -1),target_embeddings,source_embeddings.shape[1])
+        target_embeddings = torch.index_select(self.ent_embeddings, 0, targets).view(-1, self.embedding_dim, self.num_sections)
+        Q = harmonic_extension.compute_costs(LSchur,source_vertices,target_vertices,source_embeddings,target_embeddings,self.embedding_dim)
         return Q
+
+
+class SheafE_Distributional_Normal(_OldAbstractModel):
+
+    def __init__(
+        self,
+        triples_factory: TriplesFactory,
+        embedding_dim: int = 32,
+        edge_stalk_dim: int = 32,
+        scoring_fct_norm: int = 2,
+        symmetric: bool = False,
+        loss: Optional[Loss] = None,
+        preferred_device: DeviceHint = None,
+        random_seed: Optional[int] = None,
+        entity_constrainer: Optional[Constrainer] = None
+    ) -> None:
+
+        super().__init__(
+            triples_factory=triples_factory,
+            loss=loss,
+            preferred_device=preferred_device,
+            random_seed=random_seed
+        )
+
+        self.symmetric = bool(symmetric)
+        self.embedding_dim = embedding_dim
+        self.edge_stalk_dim = edge_stalk_dim
+        self.device = preferred_device
+        self.entity_constrainer = entity_constrainer
+
+        self.initialize_entities()
+        self.initialize_relations()
+
+    def initialize_entities(self):
+        esize = (self.num_entities, self.embedding_dim)
+        self.mu_embeddings = Parameter((torch.zeros(esize, device=self.device, dtype=torch.float32)), requires_grad=True)
+        self.sigma_embeddings = Parameter((torch.ones(esize, device=self.device, dtype=torch.float32)), requires_grad=True)
+
+    def initialize_relations(self):
+        # for now, initialize restrictions for sigma to be identity to keep from negative
+        tsize = (self.num_relations, self.edge_stalk_dim, self.embedding_dim)
+        I = torch.eye(tsize[1], tsize[2], device=self.device).reshape((1, tsize[1], tsize[2]))
+        I = I.repeat(tsize[0], 1, 1)
+        self.mu_left_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=self.device, dtype=torch.float32)), requires_grad=True)
+        # self.sigma_left_embeddings = Parameter(nn.init.uniform_(torch.empty(tsize, device=self.device, dtype=torch.float32)), requires_grad=True)
+        self.sigma_left_embeddings = Parameter(I, requires_grad=False)
+        if self.symmetric:
+            self.mu_right_embeddings = self.mu_left_embeddings
+            self.sigma_right_embeddings = self.sigma_left_embeddings
+        else:
+            self.mu_right_embeddings = Parameter(nn.init.xavier_uniform_(torch.empty(tsize, device=self.device, dtype=torch.float32)), requires_grad=True)
+            # self.sigma_right_embeddings = Parameter(nn.init.uniform_(torch.empty(tsize, device=self.device, dtype=torch.float32)), requires_grad=True)
+            self.sigma_right_embeddings = Parameter(I, requires_grad=False)
+
+    def get_model_savename(self):
+        if self.symmetric:
+            savestruct = 'SheafE_Distributional_Normal_Symmetric_{}embdim_{}esdim'
+        else:
+            savestruct = 'SheafE_Distributional_Normal_{}embdim_{}esdim'
+        return savestruct.format(self.embedding_dim, self.edge_stalk_dim)
+
+    def _reset_parameters_(self):  # noqa: D102
+        self.initialize_entities()
+        self.initialize_relations()
+
+    def post_parameter_update(self):
+        super().post_parameter_update()
+        if self.entity_constrainer is not None:
+            self.mu_embeddings.data = self.entity_constrainer(self.mu_embeddings.data, dim=1)
+            self.sigma_embeddings.data = torch.clamp(self.entity_constrainer(self.sigma_embeddings.data, dim=1), min=0)
+
+    def score_hrt(self, hrt_batch: torch.LongTensor) -> torch.FloatTensor:  # noqa: D102
+        # Get embeddings
+        mu_h = torch.index_select(self.mu_embeddings, 0, hrt_batch[:, 0]).view(-1, self.embedding_dim, 1)
+        mu_rel_h = torch.index_select(self.mu_left_embeddings, 0, hrt_batch[:, 1])
+        mu_rel_t = torch.index_select(self.mu_right_embeddings, 0, hrt_batch[:, 1])
+        mu_t = torch.index_select(self.mu_embeddings, 0, hrt_batch[:, 2]).view(-1, self.embedding_dim, 1)
+
+        sigma_h = torch.index_select(self.sigma_embeddings, 0, hrt_batch[:, 0]).view(-1, self.embedding_dim, 1)
+        sigma_rel_h = torch.index_select(self.sigma_left_embeddings, 0, hrt_batch[:, 1])
+        sigma_rel_t = torch.index_select(self.sigma_right_embeddings, 0, hrt_batch[:, 1])
+        sigma_t = torch.index_select(self.sigma_embeddings, 0, hrt_batch[:, 2]).view(-1, self.embedding_dim, 1)
+
+        # Project entities
+        mu_proj_h = (mu_rel_h @ mu_h).squeeze(-1)
+        mu_proj_t = (mu_rel_t @ mu_t).squeeze(-1)
+
+        sigma_proj_h = (sigma_rel_h @ sigma_h).squeeze(-1)
+        sigma_proj_t = (sigma_rel_t @ sigma_t).squeeze(-1)
+
+        h_dist = distributions.Normal(mu_proj_h, sigma_proj_h)
+        t_dist = distributions.Normal(mu_proj_t, sigma_proj_t)
+        scores = -torch.linalg.norm(distributions.kl.kl_divergence(h_dist, t_dist), dim=-1, ord=1)
+        return scores
+
+    def score_t(self, hr_batch: torch.LongTensor, slice_size: int = None) -> torch.FloatTensor:  # noqa: D102
+        # Get embeddings
+        mu_h = torch.index_select(self.mu_embeddings, 0, hr_batch[:, 0]).view(-1, self.embedding_dim, 1)
+        mu_rel_h = torch.index_select(self.mu_left_embeddings, 0, hr_batch[:, 1])
+        mu_rel_t = torch.index_select(self.mu_right_embeddings, 0, hr_batch[:, 1])
+        mu_rel_t = mu_rel_t.view(-1, 1, self.edge_stalk_dim, self.embedding_dim)
+        mu_t_all = self.mu_embeddings.view(1, -1, self.embedding_dim, 1)
+
+        sigma_h = torch.index_select(self.sigma_embeddings, 0, hr_batch[:, 0]).view(-1, self.embedding_dim, 1)
+        sigma_rel_h = torch.index_select(self.sigma_left_embeddings, 0, hr_batch[:, 1])
+        sigma_rel_t = torch.index_select(self.sigma_right_embeddings, 0, hr_batch[:, 1])
+        sigma_rel_t = sigma_rel_t.view(-1, 1, self.edge_stalk_dim, self.embedding_dim)
+        sigma_t_all = self.sigma_embeddings.view(1, -1, self.embedding_dim, 1)
+
+        if slice_size is not None:
+            raise ValueError('Not implemented')
+
+        else:
+            # Project entities
+            mu_proj_h = (mu_rel_h @ mu_h).squeeze(-1)
+            mu_proj_t = (mu_rel_t @ mu_t_all).squeeze(-1)
+
+            sigma_proj_h = (sigma_rel_h @ sigma_h).squeeze(-1)
+            sigma_proj_t = (sigma_rel_t @ sigma_t_all).squeeze(-1)
+
+        h_dist = distributions.Normal(mu_proj_h.unsqueeze(1), sigma_proj_h.unsqueeze(1))
+        t_dist = distributions.Normal(mu_proj_t, sigma_proj_t)
+
+        scores = -torch.linalg.norm(distributions.kl.kl_divergence(h_dist, t_dist), dim=-1, ord=1)
+
+        return scores
+
+    def score_h(self, rt_batch: torch.LongTensor, slice_size: int = None) -> torch.FloatTensor:  # noqa: D102
+        # Get embeddings
+        mu_h_all = self.mu_embeddings.view(1, -1, self.embedding_dim, 1)
+        mu_rel_h = torch.index_select(self.mu_left_embeddings, 0, rt_batch[:, 0])
+        mu_rel_h = mu_rel_h.view(-1, 1, self.edge_stalk_dim, self.embedding_dim)
+        mu_rel_t = torch.index_select(self.mu_right_embeddings, 0, rt_batch[:, 0])
+        mu_t = torch.index_select(self.mu_embeddings, 0, rt_batch[:, 1]).view(-1, self.embedding_dim, 1)
+
+        sigma_h_all = self.sigma_embeddings.view(1, -1, self.embedding_dim, 1)
+        sigma_rel_h = torch.index_select(self.sigma_left_embeddings, 0, rt_batch[:, 0])
+        sigma_rel_h = sigma_rel_h.view(-1, 1, self.edge_stalk_dim, self.embedding_dim)
+        sigma_rel_t = torch.index_select(self.sigma_right_embeddings, 0, rt_batch[:, 0])
+        sigma_t = torch.index_select(self.sigma_embeddings, 0, rt_batch[:, 1]).view(-1, self.embedding_dim, 1)
+
+        if slice_size is not None:
+            raise ValueError('Not implemented')
+        else:
+            # Project entities
+            mu_proj_h = (mu_rel_h @ mu_h_all).squeeze(-1)
+            mu_proj_t = (mu_rel_t @ mu_t).squeeze(-1)
+
+            sigma_proj_h = (sigma_rel_h @ sigma_h_all).squeeze(-1)
+            sigma_proj_t = (sigma_rel_t @ sigma_t).squeeze(-1)
+
+        h_dist = distributions.Normal(mu_proj_h.unsqueeze(1), sigma_proj_h.unsqueeze(1))
+        t_dist = distributions.Normal(mu_proj_t, sigma_proj_t)
+
+        scores = -torch.linalg.norm(distributions.kl.kl_divergence(h_dist, t_dist), dim=-1, ord=1)
+        return scores
+
+
+class SheafE_Distributional_Beta(_OldAbstractModel):
+
+    def __init__(
+        self,
+        triples_factory: TriplesFactory,
+        embedding_dim: int = 32,
+        edge_stalk_dim: int = 32,
+        scoring_fct_norm: int = 2,
+        symmetric: bool = False,
+        loss: Optional[Loss] = None,
+        preferred_device: DeviceHint = None,
+        random_seed: Optional[int] = None,
+        entity_constrainer: Optional[Constrainer] = None
+    ) -> None:
+
+        super().__init__(
+            triples_factory=triples_factory,
+            loss=loss,
+            preferred_device=preferred_device,
+            random_seed=random_seed
+        )
+
+        self.symmetric = bool(symmetric)
+        self.embedding_dim = embedding_dim
+        self.edge_stalk_dim = edge_stalk_dim
+        self.device = preferred_device
+        self.entity_constrainer = entity_constrainer
+
+        self.initialize_entities()
+        self.initialize_relations()
+
+    def initialize_entities(self):
+        esize = (self.num_entities, self.embedding_dim)
+        self.alpha_embeddings = Parameter(nn.init.uniform_(torch.empty(esize, device=self.device, dtype=torch.float32), a=0.05, b=1.0), requires_grad=True)
+        self.beta_embeddings = Parameter(nn.init.uniform_(torch.empty(esize, device=self.device, dtype=torch.float32), a=0.05, b=1.0), requires_grad=True)
+
+    def initialize_relations(self):
+        # for now, initialize restrictions for beta to be identity to keep from negative
+        tsize = (self.num_relations, self.edge_stalk_dim, self.embedding_dim)
+        I = torch.eye(tsize[1], tsize[2], device=self.device).reshape((1, tsize[1], tsize[2]))
+        I = I.repeat(tsize[0], 1, 1)
+        self.alpha_left_embeddings = Parameter(I, requires_grad=False)
+        # self.beta_left_embeddings = Parameter(nn.init.uniform_(torch.empty(tsize, device=self.device, dtype=torch.float32)), requires_grad=True)
+        self.beta_left_embeddings = Parameter(I, requires_grad=False)
+        if self.symmetric:
+            self.alpha_right_embeddings = self.alpha_left_embeddings
+            self.beta_right_embeddings = self.beta_left_embeddings
+        else:
+            self.alpha_right_embeddings = Parameter(I, requires_grad=False)
+            # self.beta_right_embeddings = Parameter(nn.init.uniform_(torch.empty(tsize, device=self.device, dtype=torch.float32)), requires_grad=True)
+            self.beta_right_embeddings = Parameter(I, requires_grad=False)
+
+    def get_model_savename(self):
+        if self.symmetric:
+            savestruct = 'SheafE_Distributional_Beta_Symmetric_{}embdim_{}esdim'
+        else:
+            savestruct = 'SheafE_Distributional_Beta_{}embdim_{}esdim'
+        return savestruct.format(self.embedding_dim, self.edge_stalk_dim)
+
+    def _reset_parameters_(self):  # noqa: D102
+        self.initialize_entities()
+        self.initialize_relations()
+
+    def post_parameter_update(self):
+        super().post_parameter_update()
+        if self.entity_constrainer is not None:
+            self.alpha_embeddings.data = torch.clamp(self.entity_constrainer(self.alpha_embeddings.data, dim=1), min=0.05)
+            self.beta_embeddings.data = torch.clamp(self.entity_constrainer(self.beta_embeddings.data, dim=1), min=0.05)
+
+    def score_hrt(self, hrt_batch: torch.LongTensor) -> torch.FloatTensor:  # noqa: D102
+        # Get embeddings
+        alpha_h = torch.index_select(self.alpha_embeddings, 0, hrt_batch[:, 0]).view(-1, self.embedding_dim, 1)
+        alpha_rel_h = torch.index_select(self.alpha_left_embeddings, 0, hrt_batch[:, 1])
+        alpha_rel_t = torch.index_select(self.alpha_right_embeddings, 0, hrt_batch[:, 1])
+        alpha_t = torch.index_select(self.alpha_embeddings, 0, hrt_batch[:, 2]).view(-1, self.embedding_dim, 1)
+
+        beta_h = torch.index_select(self.beta_embeddings, 0, hrt_batch[:, 0]).view(-1, self.embedding_dim, 1)
+        beta_rel_h = torch.index_select(self.beta_left_embeddings, 0, hrt_batch[:, 1])
+        beta_rel_t = torch.index_select(self.beta_right_embeddings, 0, hrt_batch[:, 1])
+        beta_t = torch.index_select(self.beta_embeddings, 0, hrt_batch[:, 2]).view(-1, self.embedding_dim, 1)
+
+        # Project entities
+        alpha_proj_h = (alpha_rel_h @ alpha_h).squeeze(-1)
+        alpha_proj_t = (alpha_rel_t @ alpha_t).squeeze(-1)
+
+        beta_proj_h = (beta_rel_h @ beta_h).squeeze(-1)
+        beta_proj_t = (beta_rel_t @ beta_t).squeeze(-1)
+
+        h_dist = distributions.beta.Beta(alpha_proj_h, beta_proj_h)
+        t_dist = distributions.beta.Beta(alpha_proj_t, beta_proj_t)
+        scores = -torch.linalg.norm(distributions.kl.kl_divergence(h_dist, t_dist), dim=-1, ord=1)
+        return scores
+
+    def score_t(self, hr_batch: torch.LongTensor, slice_size: int = None) -> torch.FloatTensor:  # noqa: D102
+        # Get embeddings
+        alpha_h = torch.index_select(self.alpha_embeddings, 0, hr_batch[:, 0]).view(-1, self.embedding_dim, 1)
+        alpha_rel_h = torch.index_select(self.alpha_left_embeddings, 0, hr_batch[:, 1])
+        alpha_rel_t = torch.index_select(self.alpha_right_embeddings, 0, hr_batch[:, 1])
+        alpha_rel_t = alpha_rel_t.view(-1, 1, self.edge_stalk_dim, self.embedding_dim)
+        alpha_t_all = self.alpha_embeddings.view(1, -1, self.embedding_dim, 1)
+
+        beta_h = torch.index_select(self.beta_embeddings, 0, hr_batch[:, 0]).view(-1, self.embedding_dim, 1)
+        beta_rel_h = torch.index_select(self.beta_left_embeddings, 0, hr_batch[:, 1])
+        beta_rel_t = torch.index_select(self.beta_right_embeddings, 0, hr_batch[:, 1])
+        beta_rel_t = beta_rel_t.view(-1, 1, self.edge_stalk_dim, self.embedding_dim)
+        beta_t_all = self.beta_embeddings.view(1, -1, self.embedding_dim, 1)
+
+        if slice_size is not None:
+            raise ValueError('Not implemented')
+
+        else:
+            # Project entities
+            alpha_proj_h = (alpha_rel_h @ alpha_h).squeeze(-1)
+            alpha_proj_t = (alpha_rel_t @ alpha_t_all).squeeze(-1)
+
+            beta_proj_h = (beta_rel_h @ beta_h).squeeze(-1)
+            beta_proj_t = (beta_rel_t @ beta_t_all).squeeze(-1)
+
+        h_dist = distributions.beta.Beta(alpha_proj_h.unsqueeze(1), beta_proj_h.unsqueeze(1))
+        t_dist = distributions.beta.Beta(alpha_proj_t, beta_proj_t)
+
+        scores = -torch.linalg.norm(distributions.kl.kl_divergence(h_dist, t_dist), dim=-1, ord=1)
+
+        return scores
+
+    def score_h(self, rt_batch: torch.LongTensor, slice_size: int = None) -> torch.FloatTensor:  # noqa: D102
+        # Get embeddings
+        alpha_h_all = self.alpha_embeddings.view(1, -1, self.embedding_dim, 1)
+        alpha_rel_h = torch.index_select(self.alpha_left_embeddings, 0, rt_batch[:, 0])
+        alpha_rel_h = alpha_rel_h.view(-1, 1, self.edge_stalk_dim, self.embedding_dim)
+        alpha_rel_t = torch.index_select(self.alpha_right_embeddings, 0, rt_batch[:, 0])
+        alpha_t = torch.index_select(self.alpha_embeddings, 0, rt_batch[:, 1]).view(-1, self.embedding_dim, 1)
+
+        beta_h_all = self.beta_embeddings.view(1, -1, self.embedding_dim, 1)
+        beta_rel_h = torch.index_select(self.beta_left_embeddings, 0, rt_batch[:, 0])
+        beta_rel_h = beta_rel_h.view(-1, 1, self.edge_stalk_dim, self.embedding_dim)
+        beta_rel_t = torch.index_select(self.beta_right_embeddings, 0, rt_batch[:, 0])
+        beta_t = torch.index_select(self.beta_embeddings, 0, rt_batch[:, 1]).view(-1, self.embedding_dim, 1)
+
+        if slice_size is not None:
+            raise ValueError('Not implemented')
+        else:
+            # Project entities
+            alpha_proj_h = (alpha_rel_h @ alpha_h_all).squeeze(-1)
+            alpha_proj_t = (alpha_rel_t @ alpha_t).squeeze(-1)
+
+            beta_proj_h = (beta_rel_h @ beta_h_all).squeeze(-1)
+            beta_proj_t = (beta_rel_t @ beta_t).squeeze(-1)
+
+        h_dist = distributions.beta.Beta(alpha_proj_h.unsqueeze(1), beta_proj_h.unsqueeze(1))
+        t_dist = distributions.beta.Beta(alpha_proj_t, beta_proj_t)
+
+        scores = -torch.linalg.norm(distributions.kl.kl_divergence(h_dist, t_dist), dim=-1, ord=1)
+        return scores

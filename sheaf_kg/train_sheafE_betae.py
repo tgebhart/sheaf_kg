@@ -25,11 +25,12 @@ training_loop = 'slcwa'
 alpha_orthogonal = 0.1
 scoring_fct_norm = 2
 batch_size = 100
+test_batch_size = 5
 dataset_loc = '/home/gebhart/projects/sheaf_kg/data/{}-betae'.format(dataset)
 loss = 'SoftplusLoss'
 
 # train_query_structures = ['1p','2p','3p','2i','3i']
-train_query_structures = ['2p','3p','2i','3i']
+train_query_structures = ['1p','2p','3p','2i','3i']
 # train_query_structures = ['1p','2p','3p']
 # train_query_structures = ['2i','3i']
 test_query_structures = ['1p','2p','3p','2i','3i','ip','pi']
@@ -85,7 +86,7 @@ def dataset_to_device(dsets, device):
 def sample_answers(answers):
     return torch.LongTensor([np.random.choice(answer_list) for answer_list in answers])
 
-def test(model, test_data, model_inverses=False):
+def test(model, test_data, model_inverses=False, sec=0, test_batch_size=test_batch_size):
     with torch.no_grad():
         allhits1 = []
         allhits3 = []
@@ -102,18 +103,19 @@ def test(model, test_data, model_inverses=False):
             mrr = 0.
             cnt = 0
             num_test = len(test_data[query_structure]['answers'])
-            for qix in tqdm(range(0, num_test, batch_size)):
+            for qix in tqdm(range(0, num_test//2, test_batch_size)):
                 if num_test - qix == 1:
                     continue
-                entities = test_data[query_structure]['entities'][qix:qix+batch_size]
-                relations = test_data[query_structure]['relations'][qix:qix+batch_size]
+                entities = test_data[query_structure]['entities'][qix:qix+test_batch_size]
+                relations = test_data[query_structure]['relations'][qix:qix+test_batch_size]
                 if model_inverses:
                     inverses = None
                 else:
-                    inverses = test_data[query_structure]['inverses'][qix:qix+batch_size]
-                all_answers = test_data[query_structure]['answers'][qix:qix+batch_size]
+                    inverses = test_data[query_structure]['inverses'][qix:qix+test_batch_size]
+                all_answers = test_data[query_structure]['answers'][qix:qix+test_batch_size]
                 targets = torch.arange(model.num_entities).to(model.device)
                 Q = model.forward_costs(query_structure, entities, relations, targets, invs=inverses)
+                Q = Q[:,:,sec]
                 for i in range(Q.shape[0]):
                     Qi = Q[i].squeeze()
                     answers = all_answers[i]
@@ -212,12 +214,11 @@ def run(dataset, dataset_loc, num_epochs, batch_size, embedding_dim, edge_stalk_
                 sampled_answers = torch.ones(sampled_targets.shape).to(device)
                 neg_targets = torch.randint(model.num_entities, sampled_targets.shape).to(device)
                 neg_answers = torch.zeros(neg_targets.shape).to(device)
-                Q_sampled = model.forward_costs(query_structure, entities, relations, sampled_targets, invs=inverses)
-                Q_neg = model.forward_costs(query_structure, entities, relations, neg_targets, invs=inverses)
-                Q = torch.cat([Q_sampled,Q_neg], dim=0)
+                scores_sampled = model.score_query(query_structure, entities, relations, sampled_targets, invs=inverses)
+                scores_neg = model.score_query(query_structure, entities, relations, neg_targets, invs=inverses)
+                scores = torch.cat([scores_sampled,scores_neg], dim=0)
                 answers = torch.cat([sampled_answers, neg_answers], dim=0)
-                print(torch.norm(Q_sampled), Q_sampled.shape)
-                loss += loss_function(-Q, answers)
+                loss += loss_function(scores, answers)
 
             loss.backward()
             optimizer.step()
