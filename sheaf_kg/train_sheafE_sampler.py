@@ -10,10 +10,15 @@ import pandas as pd
 import numpy as np
 import pykeen
 from pykeen.losses import SoftplusLoss, CrossEntropyLoss, BCEWithLogitsLoss
+from pykeen.sampling import BernoulliNegativeSampler
+from pykeen.triples import CoreTriplesFactory
 import torch
+from torch_geometric.data import NeighborSampler, Data, ShaDowKHopSampler, \
+                                GraphSAINTRandomWalkSampler, RandomNodeSampler, \
+                                ClusterData, ClusterLoader
 
 from sheafE_models import SheafE_Multisection, SheafE_Translational
-
+from sheaf_kg.complex_functions import test_batch as test
 from pykeen.pipeline import pipeline
 
 dataset = 'FB15k-237'
@@ -22,20 +27,18 @@ embedding_dim = 64
 random_seed = 1234
 training_loop = 'slcwa'
 alpha_orthogonal = 0.1
+test_every = 1
 scoring_fct_norm = 2
 batch_size = 100
 test_batch_size = 5
 dataset_loc = '/home/gebhart/projects/sheaf_kg/data/{}-betae'.format(dataset)
 loss = 'SoftplusLoss'
 
-# train_query_structures = ['1p','2p','3p','2i','3i']
-train_query_structures = ['1p','2p','3p']
-# train_query_structures = ['2i','3i']
+train_query_structures = ['1p','2p','3p','2i','3i']
 test_query_structures = ['1p','2p','3p','2i','3i','ip','pi']
 
 model_map = {'Diagonal': SheafE_Translational,
             'Multisection': SheafE_Multisection}
-
 
 def read_dataset(loc, train_query_structures=train_query_structures, test_query_structures=test_query_structures, model_inverses=False):
     dsets = {'train':{}, 'test-easy':{}}
@@ -86,73 +89,10 @@ def dataset_to_device(dsets, device):
 def sample_answers(answers):
     return torch.LongTensor([np.random.choice(answer_list) for answer_list in answers])
 
-def test(model, test_data, model_inverses=False, sec=0, test_batch_size=test_batch_size):
-    with torch.no_grad():
-        allhits1 = []
-        allhits3 = []
-        allhits5 = []
-        allhits10 = []
-        allmrr = []
-        query_names = []
-        for query_structure in test_query_structures:
-            print('Running query : {}'.format(query_structure))
-            hits1 = 0.
-            hits3 = 0.
-            hits5 = 0.
-            hits10 = 0.
-            mrr = 0.
-            cnt = 0
-            num_test = len(test_data[query_structure]['answers'])
-            for qix in tqdm(range(0, num_test//2, test_batch_size)):
-                if num_test - qix == 1:
-                    continue
-                entities = test_data[query_structure]['entities'][qix:qix+test_batch_size]
-                relations = test_data[query_structure]['relations'][qix:qix+test_batch_size]
-                if model_inverses:
-                    inverses = None
-                else:
-                    inverses = test_data[query_structure]['inverses'][qix:qix+test_batch_size]
-                all_answers = test_data[query_structure]['answers'][qix:qix+test_batch_size]
-                targets = torch.arange(model.num_entities).to(model.device)
-                Q = model.forward_costs(query_structure, entities, relations, targets, invs=inverses)
-                Q = Q[:,:,sec]
-                for i in range(Q.shape[0]):
-                    Qi = Q[i].squeeze()
-                    answers = all_answers[i]
-                    sortd,_ = torch.sort(Qi)
-                    idxleft = torch.searchsorted(sortd, Qi[answers], right=False) + 1
-                    idxright = torch.searchsorted(sortd, Qi[answers], right=True) + 1
-                    nl = idxleft.shape[0]
-                    nr = idxright.shape[0]
-                    # idxright = idxleft # throw this for optimistic ranking
-                    hits1 += ((torch.sum(idxleft <= 1)/nl + torch.sum(idxright <= 1)/nr) / 2.)
-                    hits3 += ((torch.sum(idxleft <= 3)/nl + torch.sum(idxright <= 3)/nr) / 2.)
-                    hits5 += ((torch.sum(idxleft <= 5)/nl + torch.sum(idxright <= 5)/nr) / 2.)
-                    hits10 += ((torch.sum(idxleft <= 10)/nl + torch.sum(idxright <= 10)/nr) / 2.)
-                    mrr += ((torch.sum(1./idxleft)/nl + torch.sum(1./idxright)/nr) / 2.)
-                    cnt += 1
-            if cnt > 0:
-                allhits1.append(hits1.item()/cnt)
-                allhits3.append(hits3.item()/cnt)
-                allhits5.append(hits5.item()/cnt)
-                allhits10.append(hits10.item()/cnt)
-                allmrr.append(mrr.item()/cnt)
-            else:
-                default = 0.
-                allhits1.append(default)
-                allhits3.append(default)
-                allhits5.append(default)
-                allhits10.append(default)
-                allmrr.append(default)
-
-        cols = ['hits@1', 'hits@3', 'hits@5', 'hits@10', 'mrr']
-        df = pd.DataFrame(np.array([allhits1, allhits3, allhits5, allhits10, allmrr]).T, columns=cols, index=test_query_structures)
-        return df
-
-def run(model_name, dataset, dataset_loc, num_epochs, batch_size, embedding_dim, edge_stalk_dim, loss_name, training_loop,
+def run(model_name, dataset, dataset_loc, num_epochs, batch_size, test_every, embedding_dim, edge_stalk_dim, loss_name, training_loop,
     random_seed, num_sections, symmetric, orthogonal, alpha_orthogonal, scoring_fct_norm, model_inverses):
 
-    torch.autograd.set_detect_anomaly(True)
+    # torch.autograd.set_detect_anomaly(True)
 
     timestr = time.strftime("%Y%m%d-%H%M")
     ds = pykeen.datasets.get_dataset(dataset=dataset, dataset_kwargs=dict(create_inverse_triples=model_inverses))
@@ -183,11 +123,24 @@ def run(model_name, dataset, dataset_loc, num_epochs, batch_size, embedding_dim,
 
     model = model_cls(num_entities, num_relations, **model_kwargs)
     datasets = dataset_to_device(shuffle_datasets(datasets), device)
-    train_data = datasets['train']
+    ds = pykeen.datasets.get_dataset(dataset=dataset, dataset_kwargs=dict(create_inverse_triples=model_inverses))
+    training = ds.training.mapped_triples
+
+    edge_index = torch.empty((2,training.shape[0]), dtype=torch.int64)
+    edge_index[0,:] = training[:,0]
+    edge_index[1,:] = training[:,2]
+    train_idx = torch.unique(edge_index.flatten())
+    # https://docs.dgl.ai/en/0.4.x/tutorials/models/5_giant_graph/1_sampling_mx.html
+    train_loader = NeighborSampler(edge_index, node_idx=train_idx,
+                               sizes=[1,1,1,1,1,1], batch_size=10,
+                               shuffle=True, num_workers=2)
+
+    tf = CoreTriplesFactory(training, train_idx.shape[0], torch.unique(training[:,1]).shape[0], create_inverse_triples=model_inverses)
+    neg_sampler = BernoulliNegativeSampler(tf)
 
     optimizer = torch.optim.Adam(
             model.get_parameters(),
-            lr=1e-2)
+            lr=1e-4)
     gamma = 0.1
     step_size = 2
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size, gamma=gamma)
@@ -199,38 +152,32 @@ def run(model_name, dataset, dataset_loc, num_epochs, batch_size, embedding_dim,
     if loss_name == 'BCEWithLogitsLoss':
         loss_function = BCEWithLogitsLoss()
 
-    # all train query structures should have the same number of queries
-    num_queries = train_data[train_query_structures[0]]['relations'].shape[0]
-
     results = []
-
     for epoch in range(1,num_epochs+1):
         # model.train()
         print(f'epoch: {epoch}')
 
-        for bix in tqdm(range(0, num_queries, batch_size)):
+        for batch_size, n_id, adjs in tqdm(train_loader):
 
             optimizer.zero_grad()
             loss = 0
-            for query_structure in train_data:
 
-                entities = train_data[query_structure]['entities'][bix:bix+batch_size]
-                relations = train_data[query_structure]['relations'][bix:bix+batch_size]
-                targets = train_data[query_structure]['answers'][bix:bix+batch_size]
-                if model_inverses:
-                    inverses = None
-                else:
-                    inverses = train_data[query_structure]['inverses'][bix:bix+batch_size]
+            e_ids = []
+            for j, (eix, e_id, size) in enumerate(adjs):
+                e_ids.append(e_id)
 
-                sampled_targets = sample_answers(targets).to(device)
-                sampled_answers = torch.ones(sampled_targets.shape).to(device)
-                neg_targets = torch.randint(model.num_entities, sampled_targets.shape).to(device)
-                neg_answers = torch.zeros(neg_targets.shape).to(device)
-                scores_sampled = model.score_query(query_structure, entities, relations, sampled_targets, invs=inverses)
-                scores_neg = model.score_query(query_structure, entities, relations, neg_targets, invs=inverses)
-                scores = torch.cat([scores_sampled,scores_neg], dim=0)
-                answers = torch.cat([sampled_answers, neg_answers], dim=0)
-                loss += loss_function(scores, answers)
+            pos_batch = training[torch.cat(e_ids, dim=0)].to(device)
+            neg_batch = neg_sampler.sample(pos_batch)[0]
+
+            pos_answers = torch.ones(pos_batch.shape[0]).to(device)
+            neg_answers = torch.zeros(neg_batch.shape[0]).to(device)
+
+            pos_scores = model.score_hrt(pos_batch)
+            neg_scores = model.score_hrt(neg_batch)
+
+            scores = torch.cat([pos_scores,neg_scores], dim=0)
+            answers = torch.cat([pos_answers, neg_answers], dim=0)
+            loss += loss_function(scores, answers)
 
             loss.backward()
             optimizer.step()
@@ -238,14 +185,16 @@ def run(model_name, dataset, dataset_loc, num_epochs, batch_size, embedding_dim,
 
         print('Train Loss: {:.2f}'.format(loss.item()))
 
-        res_df = test(model, datasets['test-easy'])
-        res_df['epoch'] = epoch
-        results.append(res_df)
-        print(res_df*100)
+        if epoch % test_every == 0:
+            res_df = test(model, datasets['test-easy'], model_inverses=model_inverses, test_query_structures=test_query_structures)
+            res_df['epoch'] = epoch
+            results.append(res_df)
+            print(res_df*100)
 
         # scheduler.step()
 
     res_df = pd.concat(results, axis=0)
+
 
     # model = result.model
     model_savename = model.get_model_savename()
@@ -275,6 +224,8 @@ if __name__ == '__main__':
                         help='number of training epochs')
     training_args.add_argument('--batch-size', type=int, default=batch_size,
                         help='training/testing batch size')
+    training_args.add_argument('--test-every', type=int, default=test_every,
+                        help='number of training epochs')
     training_args.add_argument('--embedding-dim', type=int, default=embedding_dim,
                         help='entity embedding dimension')
     training_args.add_argument('--edge-stalk-dim', type=int, default=None,
@@ -301,7 +252,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    run(args.model, args.dataset, args.dataset_loc, args.num_epochs, args.batch_size,
+    run(args.model, args.dataset, args.dataset_loc, args.num_epochs, args.batch_size, args.test_every,
         args.embedding_dim, args.edge_stalk_dim, args.loss, args.training_loop,
         args.seed, args.num_sections, args.symmetric, args.orthogonal,
         args.alpha_orthogonal, args.scoring_fct_norm, args.model_inverses)
