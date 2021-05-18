@@ -27,7 +27,7 @@ num_sections = None
 alpha_orthogonal = 0.1
 lbda = 0.5
 scoring_fct_norm = None
-dataset_loc = '/home/gebhart/projects/sheaf_kg/data/{}-betae'.format(dataset)
+dataset_loc = '../data/{}-betae'.format(dataset)
 
 loss = 'SoftplusLoss'
 
@@ -38,7 +38,8 @@ model_map = {'Diag': SheafE_Diag,
             'Distributional_Normal': SheafE_Distributional_Normal,
             'Distributional_Beta': SheafE_Distributional_Beta}
 
-test_query_structures = ['1p','2p','3p','2i','3i']#,'ip','pi']
+test_query_structures = ['1p','2p','3p','2i','3i','ip','pi']
+# test_query_structures = ['pi','ip']
 
 def run(model_name, dataset, num_epochs, embedding_dim, edge_stalk_dim, loss, training_loop, sampler,
     random_seed, num_sections, symmetric, orthogonal, alpha_orthogonal, lbda, scoring_fct_norm,

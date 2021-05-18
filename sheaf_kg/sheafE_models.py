@@ -23,9 +23,9 @@ import torch.distributions as distributions
 
 import sheaf_kg.batch_harmonic_extension as harmonic_extension
 from sheaf_kg.complex_functions import L_p_multisection, L_i_multisection, L_ip_multisection, L_pi_multisection
-from sheaf_kg.complex_functions import L_p1_multisection, L_p_cvx, L_p2_cvx, L_p3_cvx, L_ip_cvx, L_pi_cvx
+from sheaf_kg.complex_functions import L_p1_multisection, L_p_cvx, L_ip_cvx, L_pi_cvx, L_p_translational_cvx, L_ip_translational_cvx, L_pi_translational_cvx
 from sheaf_kg.complex_functions import L_p1_translational, L_p_translational, L_i_translational, L_ip_translational, L_pi_translational
-from sheaf_kg.complex_functions import cvxpy_problem, linear_chain
+from sheaf_kg.complex_functions import cvxpy_problem, linear_chain, pi_chain, ip_chain
 
 class SheafE_Multisection(_OldAbstractModel):
 
@@ -79,13 +79,15 @@ class SheafE_Multisection(_OldAbstractModel):
         if self.complex_solver == 'cvx':
             lp2_layer = cvxpy_problem(linear_chain(2), self.embedding_dim, self.edge_stalk_dim, [0])
             lp3_layer = cvxpy_problem(linear_chain(3), self.embedding_dim, self.edge_stalk_dim, [0])
+            lip_layer = cvxpy_problem(ip_chain(), self.embedding_dim, self.edge_stalk_dim, [0,1])
+            lpi_layer = cvxpy_problem(pi_chain(), self.embedding_dim, self.edge_stalk_dim, [0,1])
             self.query_name_fn_dict = { '1p':L_p1_multisection,
                                         '2p':partial(L_p_cvx, layer=lp2_layer),
                                         '3p':partial(L_p_cvx, layer=lp3_layer),
                                         '2i':L_i_multisection,
                                         '3i':L_i_multisection,
-                                        'ip':L_ip_cvx,
-                                        'pi':L_pi_cvx }
+                                        'ip':partial(L_ip_cvx, layer=lip_layer),
+                                        'pi':partial(L_pi_cvx, layer=lpi_layer) }
 
         self.initialize_entities()
         self.initialize_relations()
@@ -157,17 +159,19 @@ class SheafE_Multisection(_OldAbstractModel):
 
     def score_hrt_projections(self, proj_h: torch.FloatTensor, proj_t: torch.FloatTensor) -> torch.FloatTensor:
         scores = - ((1-self.lbda)*torch.norm(proj_h - proj_t, dim=(1,2), p=self.scoring_fct_norm)**2 + self.lbda*torch.sum(torch.norm(proj_h - proj_t, dim=(1,2), p=self.scoring_fct_norm)**2, dim=0))
-        if self.orthogonal and self.num_sections > 1:
-            ents = torch.cat([h,t],dim=0)
-            I = self.I.reshape((1, self.I.shape[0], self.I.shape[1]))
-            I = I.repeat(ents.shape[0], 1, 1)
-            orth_scores = self.alpha_orthogonal * torch.norm(ents.permute(0,2,1)@ents - I, p=self.scoring_fct_norm)
-            return scores - orth_scores
         return scores
 
     def score_hrt(self, hrt_batch: torch.LongTensor) -> torch.FloatTensor:  # noqa: D102
         proj_h, proj_t = self.project_hrt(hrt_batch)
-        return self.score_hrt_projections(proj_h, proj_t)
+        scores = self.score_hrt_projections(proj_h, proj_t)
+        if self.orthogonal and self.num_sections > 1:
+            h = torch.index_select(self.ent_embeddings, 0, hrt_batch[:, 0]).view(-1, self.embedding_dim, self.num_sections)
+            t = torch.index_select(self.ent_embeddings, 0, hrt_batch[:, 2]).view(-1, self.embedding_dim, self.num_sections)
+            ents = torch.cat([h,t],dim=0)
+            I = self.I.reshape((1, self.I.shape[0], self.I.shape[1]))
+            orth_scores = self.alpha_orthogonal * torch.norm(ents.permute(0,2,1)@ents - I, p=self.scoring_fct_norm)
+            return scores - orth_scores
+        return scores
 
     def project_t(self, hr_batch: torch.LongTensor, slice_size: int = None):
         # Get embeddings
@@ -362,13 +366,17 @@ class SheafE_Bilinear(SheafE_Multisection):
                                         'ip':L_ip_translational,
                                         'pi':L_pi_translational }
         if self.complex_solver == 'cvx':
+            lp2_layer = cvxpy_problem(linear_chain(2), self.embedding_dim, self.edge_stalk_dim, [0], edge_cochains=True)
+            lp3_layer = cvxpy_problem(linear_chain(3), self.embedding_dim, self.edge_stalk_dim, [0], edge_cochains=True)
+            lip_layer = cvxpy_problem(ip_chain(), self.embedding_dim, self.edge_stalk_dim, [0,1], edge_cochains=True)
+            lpi_layer = cvxpy_problem(pi_chain(), self.embedding_dim, self.edge_stalk_dim, [0,1], edge_cochains=True)
             self.query_name_fn_dict = { '1p':L_p1_translational,
-                                        '2p':L_p2_cvx_translational,
-                                        '3p':L_p3_cvx_translational,
+                                        '2p':partial(L_p_translational_cvx, layer=lp2_layer),
+                                        '3p':partial(L_p_translational_cvx, layer=lp3_layer),
                                         '2i':L_i_translational,
                                         '3i':L_i_translational,
-                                        'ip':L_ip_cvx_translational,
-                                        'pi':L_pi_cvx_translational }
+                                        'ip':partial(L_ip_translational_cvx, layer=lip_layer),
+                                        'pi':partial(L_pi_translational_cvx, layer=lpi_layer) }
 
         self.initialize_edge_cochains()
 
@@ -394,18 +402,20 @@ class SheafE_Bilinear(SheafE_Multisection):
     def score_hrt_projections(self, proj_h: torch.FloatTensor, proj_t: torch.FloatTensor, c: torch.FloatTensor) -> torch.FloatTensor:
         scores = -((1-self.lbda)*torch.norm(proj_h + c - proj_t, dim=(1,2), p=self.scoring_fct_norm)**2 +
                     self.lbda*torch.sum(torch.norm(proj_h + c - proj_t, dim=(1,2), p=self.scoring_fct_norm)**2, dim=0))
-        if self.orthogonal and self.num_sections > 1:
-            ents = torch.cat([h,t],dim=0)
-            I = self.I.reshape((1, self.I.shape[0], self.I.shape[1]))
-            I = I.repeat(ents.shape[0], 1, 1)
-            orth_scores = self.alpha_orthogonal * torch.norm(ents.permute(0,2,1)@ents - I, p=self.scoring_fct_norm)
-            return scores - orth_scores
         return scores
 
     def score_hrt(self, hrt_batch: torch.LongTensor) -> torch.FloatTensor:  # noqa: D102
         proj_h, proj_t = self.project_hrt(hrt_batch)
         c = torch.index_select(self.edge_cochains, 0, hrt_batch[:,1]).view(-1, self.edge_stalk_dim, self.num_sections)
-        return self.score_hrt_projections(proj_h, proj_t, c)
+        scores = self.score_hrt_projections(proj_h, proj_t, c)
+        if self.orthogonal and self.num_sections > 1:
+            h = torch.index_select(self.ent_embeddings, 0, hrt_batch[:, 0]).view(-1, self.embedding_dim, self.num_sections)
+            t = torch.index_select(self.ent_embeddings, 0, hrt_batch[:, 2]).view(-1, self.embedding_dim, self.num_sections)
+            ents = torch.cat([h,t],dim=0)
+            I = self.I.reshape((1, self.I.shape[0], self.I.shape[1]))
+            orth_scores = self.alpha_orthogonal * torch.norm(ents.permute(0,2,1)@ents - I, p=self.scoring_fct_norm)
+            return scores - orth_scores
+        return scores
 
     def score_hr_projections(self, proj_h: torch.FloatTensor, proj_t: torch.FloatTensor, c: torch.FloatTensor) -> torch.FloatTensor:
         scores = -torch.norm(proj_h[:, None, :, :] + c[:, None, :, :] - proj_t[:, :, :, :], dim=(-1,-2), p=self.scoring_fct_norm)**2
@@ -438,6 +448,7 @@ class SheafE_Translational(SheafE_Bilinear):
         alpha_orthogonal: float = 0.1,
         lbda: float = 0.5,
         num_sections: int = 1,
+        rel_identity: bool = True,
         complex_solver: str = 'schur',
         loss: Optional[Loss] = None,
         preferred_device: DeviceHint = None,
@@ -446,10 +457,13 @@ class SheafE_Translational(SheafE_Bilinear):
         entity_constrainer: Optional[Constrainer] = functional.normalize
     ) -> None:
 
+        self.symmetric = True
+        self.rel_identity = rel_identity
+
         super().__init__(
             triples_factory=triples_factory,
             embedding_dim=embedding_dim,
-            edge_stalk_dim=edge_stalk_dim,
+            edge_stalk_dim=embedding_dim,
             scoring_fct_norm=scoring_fct_norm,
             symmetric=True,
             orthogonal=orthogonal,
@@ -462,17 +476,24 @@ class SheafE_Translational(SheafE_Bilinear):
             regularizer=regularizer,
         )
 
-        self.symmetric = True
-
     def initialize_relations(self):
-        id = torch.eye(self.edge_stalk_dim, self.embedding_dim, device=self.device, dtype=torch.float32)
-        id = id.reshape((1, self.edge_stalk_dim, self.embedding_dim))
-        batch_id = id.repeat(self.num_relations, 1, 1)
-        self.left_embeddings = batch_id
-        self.right_embeddings = batch_id
+        if self.rel_identity:
+            id = torch.eye(self.edge_stalk_dim, self.embedding_dim, device=self.device, dtype=torch.float32, requires_grad=False)
+            id = id.reshape((1, self.edge_stalk_dim, self.embedding_dim))
+            batch_id = id.repeat(self.num_relations, 1, 1)
+            self.left_embeddings = batch_id
+            self.right_embeddings = batch_id
+        else:
+            diag = nn.init.xavier_uniform_(torch.empty((self.num_relations, self.embedding_dim), dtype=torch.float32, requires_grad=False))
+            mat = torch.diag_embed(diag).to(self.device)
+            self.left_embeddings = mat
+            self.right_embeddings = mat
 
     def get_model_savename(self):
-        savestruct = 'SheafE_Translational_{}embdim_{}esdim_{}sec_{}norm_{}lbda'
+        if self.rel_identity:
+            savestruct = 'SheafE_Translational_{}embdim_{}esdim_{}sec_{}norm_{}lbda'
+        else:
+            savestruct = 'SheafE_Translational_Rand_Diag_{}embdim_{}esdim_{}sec_{}norm_{}lbda'
         return savestruct.format(self.embedding_dim, self.edge_stalk_dim, self.num_sections, self.scoring_fct_norm, self.lbda)
 
 class SheafE_Distributional_Normal(_OldAbstractModel):
