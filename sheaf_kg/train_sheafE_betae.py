@@ -25,7 +25,7 @@ alpha_orthogonal = 0.1
 scoring_fct_norm = 2
 batch_size = 100
 test_batch_size = 5
-dataset_loc = '/home/gebhart/projects/sheaf_kg/data/{}-betae'.format(dataset)
+dataset_loc = '../data/{}-betae'.format(dataset)
 loss = 'SoftplusLoss'
 
 # train_query_structures = ['1p','2p','3p','2i','3i']
@@ -46,10 +46,10 @@ def read_dataset(loc, train_query_structures=train_query_structures, test_query_
         else:
             query_structures = test_query_structures
         for query_structure in query_structures:
-            entities = np.load(os.path.join(dataset_loc, f'{query_structure}_{resaved_remapped}_{key_name}_entities.npy'))
-            relations = np.load(os.path.join(dataset_loc, f'{query_structure}_{resaved_remapped}_{key_name}_relations.npy'))
-            inverses = np.load(os.path.join(dataset_loc, f'{query_structure}_{resaved_remapped}_{key_name}_inverses.npy'))
-            with open(os.path.join(dataset_loc, f'{query_structure}_{resaved_remapped}_{key_name}_answers.pkl'), 'rb') as f:
+            entities = np.load(os.path.join(loc, f'{query_structure}_{resaved_remapped}_{key_name}_entities.npy'))
+            relations = np.load(os.path.join(loc, f'{query_structure}_{resaved_remapped}_{key_name}_relations.npy'))
+            inverses = np.load(os.path.join(loc, f'{query_structure}_{resaved_remapped}_{key_name}_inverses.npy'))
+            with open(os.path.join(loc, f'{query_structure}_{resaved_remapped}_{key_name}_answers.pkl'), 'rb') as f:
                 answers = pickle.load(f)
             dsets[key_name][query_structure] = {}
             dsets[key_name][query_structure]['entities'] = entities

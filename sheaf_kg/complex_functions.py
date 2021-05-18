@@ -682,7 +682,7 @@ def test_batch(model, test_data, model_inverses=False, sec=0, test_batch_size=5,
                     answers = [a[i] if len(a) > i else a[-1] for a in all_answers ]
                     if len(answers) > 0:
                         ranks = rank_based_evaluator.compute_rank_from_scores(Q[np.vstack((np.arange(len(answers)), answers))].unsqueeze(1), Q)
-                        avg_rank = ranks['avg'].cpu().numpy()
+                        avg_rank = ranks['realistic'].cpu().numpy()
                         all_avg_ranks.append(avg_rank)
             all_avg_ranks = np.concatenate(all_avg_ranks)
             rd = {k: np.mean(all_avg_ranks <= k) for k in ks}
