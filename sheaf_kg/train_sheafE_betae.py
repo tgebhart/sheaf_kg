@@ -12,7 +12,7 @@ import pykeen
 from pykeen.losses import SoftplusLoss, CrossEntropyLoss, BCEWithLogitsLoss
 import torch
 
-from sheafE_models import SheafE_Multisection, SheafE_Translational
+from sheaf_kg.sheafE_models import SheafE_Multisection, SheafE_Translational
 
 from pykeen.pipeline import pipeline
 

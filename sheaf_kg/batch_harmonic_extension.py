@@ -134,13 +134,8 @@ def compute_costs_translational(L,affine,source_vertices,target_vertices,xS,xT,b
         xT = xT.unsqueeze(1)
         lin = torch.sum(xS * (LST @ xT), axis=2)
         quad = torch.sum(xT * (LTT @ xT), axis=2)
-        # aff_const = 2 * torch.sum(b * (affSS @ xS), axis=1)
-        # aff_quad = 2 * torch.sum(b * (affTT @ xT), axis=2)
-        # affine = aff_const[None,:,:] + aff_quad
         affine = 2*torch.sum(b * ((affSS @ xS)[None,:,:] + (affTT @ xT)), axis=2)
-        # affine = 0
         return torch.transpose((const[None, :, :] + lin + quad - affine), 0, 1)
-
     else:
         const = torch.sum(xS * (LSS @ xS), axis=1)
         lin = torch.sum(xS * (LST @ xT), axis=1)

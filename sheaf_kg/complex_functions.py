@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import pykeen
-from pykeen.evaluation import  rank_based_evaluator
+from pykeen.evaluation import rank_based_evaluator
 from tqdm import tqdm
 import torch
 import cvxpy as cp
@@ -10,7 +10,7 @@ from scipy import stats
 
 import sheaf_kg.batch_harmonic_extension as harmonic_extension
 
-def L_p_traversal_transE(model, entities, relations, targets, invs=None):
+def L_p_traversal_transE(model, entities, relations, targets, invs=None, p=1):
     '''query of form ('e', ('r', 'r', ... , 'r')).
     here we assume 2 or more relations are present so 2p or greater
     '''
@@ -31,7 +31,7 @@ def L_p_traversal_transE(model, entities, relations, targets, invs=None):
                 if invs[invix] == -1:
                     r[ainvix,invix] *= -1
 
-    Q = -torch.linalg.norm(h[:, None, :] + torch.sum(r, dim=(1))[:, None, :] - t[None, :, :], dim=(-1), p=model.scoring_fct_norm)
+    Q = -torch.linalg.norm(h[:, None, :] + torch.sum(r, dim=(1))[:, None, :] - t[None, :, :], dim=(-1), ord=p)
     return Q
 
 def L_p1_multisection(model, entities, relations, targets=None, invs=None):
@@ -410,7 +410,7 @@ def ip_chain():
 def pi_chain():
     return torch.LongTensor(np.array([[0,2],[2,3],[1,3]],np.int).T)
 
-def L_p_cvx(model, entities, relations, targets, invs=None, sec=0, layer=None):
+def L_p_cvx(model, entities, relations, targets, invs=None, layer=None):
     if layer is None:
         raise ValueError('Must specify cvxlayer instantiation')
     all_ents = entities
@@ -436,20 +436,21 @@ def L_p_cvx(model, entities, relations, targets, invs=None, sec=0, layer=None):
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
 
-    source_embeddings = torch.index_select(model.ent_embeddings, 0, all_ents)[:,:,sec]
-    target_embeddings = torch.index_select(model.ent_embeddings, 0, targets)[:,:,sec].to('cpu')
+    source_embeddings = torch.index_select(model.ent_embeddings, 0, all_ents)
+    target_embeddings = torch.index_select(model.ent_embeddings, 0, targets).to('cpu')
 
     d = harmonic_extension.coboundary(edge_indices, restrictions)
-    ret = torch.empty((num_queries, targets.shape[0]))
+    ret = torch.empty((num_queries, targets.shape[0], model.num_sections))
     for qix in range(num_queries):
-        xopts, = layer(d[qix].to('cpu'), source_embeddings[qix].flatten().to('cpu'))
-        r = xopts.reshape((-1,model.embedding_dim))
-        t = r[-1]
-        # ret[qix,:] = -torch.linalg.norm(t[None,:] - target_embeddings, ord=2, dim=1)
-        ret[qix,:] = -torch.matmul(target_embeddings, t)
+        for sec in model.num_sections:
+            xopts, = layer(d[qix].to('cpu'), source_embeddings[qix,:,sec].flatten().to('cpu'))
+            r = xopts.reshape((-1,model.embedding_dim))
+            t = r[-1]
+            # ret[qix,:] = -torch.linalg.norm(t[None,:] - target_embeddings, ord=2, dim=1)
+            ret[qix,:,sec] = -torch.matmul(target_embeddings[:,:,sec], t)
     return ret
 
-def L_ip_cvx(model, entities, relations, targets, invs=None, sec=0, layer=None):
+def L_ip_cvx(model, entities, relations, targets, invs=None, layer=None):
     '''query of form ((('e', ('r',)), ('e', ('r',))), ('r',))'''
     all_ents = entities
     all_rels = relations
@@ -476,20 +477,21 @@ def L_ip_cvx(model, entities, relations, targets, invs=None, sec=0, layer=None):
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
 
-    source_embeddings = torch.index_select(model.ent_embeddings, 0, all_ents.flatten()).view(num_queries, -1, model.num_sections)[:,:,sec]
-    target_embeddings = torch.index_select(model.ent_embeddings, 0, targets)[:,:,sec].to('cpu')
+    source_embeddings = torch.index_select(model.ent_embeddings, 0, all_ents.flatten()).view(num_queries, -1, model.num_sections)
+    target_embeddings = torch.index_select(model.ent_embeddings, 0, targets).to('cpu')
 
     d = harmonic_extension.coboundary(edge_indices, restrictions)
-    ret = torch.empty((num_queries, targets.shape[0]))
+    ret = torch.empty((num_queries, targets.shape[0], model.num_sections))
     for qix in range(num_queries):
-        xopts, = layer(d[qix].to('cpu'), source_embeddings[qix].flatten().to('cpu'))
-        r = xopts.reshape((-1,model.embedding_dim))
-        t = r[-1]
-        # ret[qix,:] = -torch.linalg.norm(t[None,:] - target_embeddings, ord=2, dim=1)
-        ret[qix,:] = -torch.matmul(target_embeddings, t)
+        for sec in model.num_sections:
+            xopts, = layer(d[qix].to('cpu'), source_embeddings[qix,:,sec].flatten().to('cpu'))
+            r = xopts.reshape((-1,model.embedding_dim))
+            t = r[-1]
+            # ret[qix,:] = -torch.linalg.norm(t[None,:] - target_embeddings, ord=2, dim=1)
+            ret[qix,:,sec] = -torch.matmul(target_embeddings[:,:,sec], t)
     return ret
 
-def L_pi_cvx(model, entities, relations, targets, invs=None, sec=0, layer=None):
+def L_pi_cvx(model, entities, relations, targets, invs=None, layer=None):
     '''query of form (('e', ('r', 'r')), ('e', ('r',)))'''
     all_ents = entities
     all_rels = relations
@@ -516,20 +518,21 @@ def L_pi_cvx(model, entities, relations, targets, invs=None, sec=0, layer=None):
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
 
-    source_embeddings = torch.index_select(model.ent_embeddings, 0, all_ents.flatten()).view(num_queries, -1, model.num_sections)[:,:,sec]
-    target_embeddings = torch.index_select(model.ent_embeddings, 0, targets)[:,:,sec].to('cpu')
+    source_embeddings = torch.index_select(model.ent_embeddings, 0, all_ents.flatten()).view(num_queries, -1, model.num_sections)
+    target_embeddings = torch.index_select(model.ent_embeddings, 0, targets).to('cpu')
 
     d = harmonic_extension.coboundary(edge_indices, restrictions)
-    ret = torch.empty((num_queries, targets.shape[0]))
+    ret = torch.empty((num_queries, targets.shape[0], model.num_sections))
     for qix in range(num_queries):
-        xopts, = layer(d[qix].to('cpu'), source_embeddings[qix].flatten().to('cpu'))
-        r = xopts.reshape((-1,model.embedding_dim))
-        t = r[-1]
-        # ret[qix,:] = -torch.linalg.norm(t[None,:] - target_embeddings, ord=2, dim=1)
-        ret[qix,:] = -torch.matmul(target_embeddings, t)
+        for sec in model.num_sections:
+            xopts, = layer(d[qix].to('cpu'), source_embeddings[qix,:,sec].flatten().to('cpu'))
+            r = xopts.reshape((-1,model.embedding_dim))
+            t = r[-1]
+            # ret[qix,:] = -torch.linalg.norm(t[None,:] - target_embeddings, ord=2, dim=1)
+            ret[qix,:,sec] = -torch.matmul(target_embeddings[:,:,sec], t)
     return ret
 
-def L_p_translational_cvx(model, entities, relations, targets, invs=None, sec=0, layer=None):
+def L_p_translational_cvx(model, entities, relations, targets, invs=None, layer=None):
     if layer is None:
         raise ValueError('Must specify cvxlayer instantiation')
     all_ents = entities
@@ -555,22 +558,23 @@ def L_p_translational_cvx(model, entities, relations, targets, invs=None, sec=0,
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
 
-    source_embeddings = torch.index_select(model.ent_embeddings, 0, all_ents)[:,:,sec]
-    target_embeddings = torch.index_select(model.ent_embeddings, 0, targets)[:,:,sec].to('cpu')
-    b = torch.index_select(model.edge_cochains, 0, all_rels.flatten()).view(all_rels.shape[0],-1,model.num_sections)[:,:,sec]
+    source_embeddings = torch.index_select(model.ent_embeddings, 0, all_ents)
+    target_embeddings = torch.index_select(model.ent_embeddings, 0, targets).to('cpu')
+    b = torch.index_select(model.edge_cochains, 0, all_rels.flatten()).view(all_rels.shape[0],-1,model.num_sections)
 
 
     d = harmonic_extension.coboundary(edge_indices, restrictions)
-    ret = torch.empty((num_queries, targets.shape[0]))
+    ret = torch.empty((num_queries, targets.shape[0], model.num_sections))
     for qix in range(num_queries):
-        xopts, = layer(d[qix].to('cpu'), source_embeddings[qix].flatten().to('cpu'), b[qix].flatten().to('cpu'))
-        r = xopts.reshape((-1,model.embedding_dim))
-        t = r[-1]
-        # ret[qix,:] = -torch.linalg.norm(t[None,:] - target_embeddings, ord=2, dim=1)
-        ret[qix,:] = -torch.matmul(target_embeddings, t)
+        for sec in model.num_sections:
+            xopts, = layer(d[qix].to('cpu'), source_embeddings[qix,:,sec].flatten().to('cpu'), b[qix,:,sec].flatten().to('cpu'))
+            r = xopts.reshape((-1,model.embedding_dim))
+            t = r[-1]
+            # ret[qix,:] = -torch.linalg.norm(t[None,:] - target_embeddings, ord=2, dim=1)
+            ret[qix,:,sec] = -torch.matmul(target_embeddings, t)
     return ret
 
-def L_ip_translational_cvx(model, entities, relations, targets, invs=None, sec=0, layer=None):
+def L_ip_translational_cvx(model, entities, relations, targets, invs=None, layer=None):
     '''query of form ((('e', ('r',)), ('e', ('r',))), ('r',))'''
     all_ents = entities
     all_rels = relations
@@ -597,21 +601,22 @@ def L_ip_translational_cvx(model, entities, relations, targets, invs=None, sec=0
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
 
-    source_embeddings = torch.index_select(model.ent_embeddings, 0, all_ents.flatten()).view(num_queries, -1, model.num_sections)[:,:,sec]
-    target_embeddings = torch.index_select(model.ent_embeddings, 0, targets)[:,:,sec].to('cpu')
-    b = torch.index_select(model.edge_cochains, 0, all_rels.flatten()).view(all_rels.shape[0],-1,model.num_sections)[:,:,sec]
+    source_embeddings = torch.index_select(model.ent_embeddings, 0, all_ents.flatten()).view(num_queries, -1, model.num_sections)
+    target_embeddings = torch.index_select(model.ent_embeddings, 0, targets).to('cpu')
+    b = torch.index_select(model.edge_cochains, 0, all_rels.flatten()).view(all_rels.shape[0],-1,model.num_sections)
 
     d = harmonic_extension.coboundary(edge_indices, restrictions)
-    ret = torch.empty((num_queries, targets.shape[0]))
+    ret = torch.empty((num_queries, targets.shape[0], model.num_sections))
     for qix in range(num_queries):
-        xopts, = layer(d[qix].to('cpu'), source_embeddings[qix].flatten().to('cpu'), b[qix].flatten().to('cpu'))
-        r = xopts.reshape((-1,model.embedding_dim))
-        t = r[-1]
-        # ret[qix,:] = -torch.linalg.norm(t[None,:] - target_embeddings, ord=2, dim=1)
-        ret[qix,:] = -torch.matmul(target_embeddings, t)
+        for sec in model.num_sections:
+            xopts, = layer(d[qix].to('cpu'), source_embeddings[qix,:,sec].flatten().to('cpu'), b[qix,:,sec].flatten().to('cpu'))
+            r = xopts.reshape((-1,model.embedding_dim))
+            t = r[-1]
+            # ret[qix,:] = -torch.linalg.norm(t[None,:] - target_embeddings, ord=2, dim=1)
+            ret[qix,:,sec] = -torch.matmul(target_embeddings, t)
     return ret
 
-def L_pi_translational_cvx(model, entities, relations, targets, invs=None, sec=0, layer=None):
+def L_pi_translational_cvx(model, entities, relations, targets, invs=None, layer=None):
     '''query of form (('e', ('r', 'r')), ('e', ('r',)))'''
     all_ents = entities
     all_rels = relations
@@ -638,22 +643,22 @@ def L_pi_translational_cvx(model, entities, relations, targets, invs=None, sec=0
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
 
-    source_embeddings = torch.index_select(model.ent_embeddings, 0, all_ents.flatten()).view(num_queries, -1, model.num_sections)[:,:,sec]
-    target_embeddings = torch.index_select(model.ent_embeddings, 0, targets)[:,:,sec].to('cpu')
-    b = torch.index_select(model.edge_cochains, 0, all_rels.flatten()).view(all_rels.shape[0],-1,model.num_sections)[:,:,sec]
+    source_embeddings = torch.index_select(model.ent_embeddings, 0, all_ents.flatten()).view(num_queries, -1, model.num_sections)
+    target_embeddings = torch.index_select(model.ent_embeddings, 0, targets).to('cpu')
+    b = torch.index_select(model.edge_cochains, 0, all_rels.flatten()).view(all_rels.shape[0],-1,model.num_sections)
 
     d = harmonic_extension.coboundary(edge_indices, restrictions)
-    ret = torch.empty((num_queries, targets.shape[0]))
+    ret = torch.empty((num_queries, targets.shape[0], model.num_sections))
     for qix in range(num_queries):
-        xopts, = layer(d[qix].to('cpu'), source_embeddings[qix].flatten().to('cpu'), b[qix].flatten().to('cpu'))
-        r = xopts.reshape((-1,model.embedding_dim))
-        t = r[-1]
-        # ret[qix,:] = -torch.linalg.norm(t[None,:] - target_embeddings, ord=2, dim=1)
-        ret[qix,:] = -torch.matmul(target_embeddings, t)
+        for sec in model.num_sections:
+            xopts, = layer(d[qix].to('cpu'), source_embeddings[qix,:,sec].flatten().to('cpu'), b[qix,:,sec].flatten().to('cpu'))
+            r = xopts.reshape((-1,model.embedding_dim))
+            t = r[-1]
+            # ret[qix,:] = -torch.linalg.norm(t[None,:] - target_embeddings, ord=2, dim=1)
+            ret[qix,:,sec] = -torch.matmul(target_embeddings, t)
     return ret
 
-
-def test_batch(model, test_data, model_inverses=False, sec=0, test_batch_size=5,
+def test_batch(model, test_data, model_inverses=False, sec='average', test_batch_size=5,
                 test_query_structures=['1p','2p','3p','2i','3i','ip','pi'],
                 ks=[1,3,5,10], complex_solver='schur'):
     with torch.no_grad():
@@ -675,7 +680,9 @@ def test_batch(model, test_data, model_inverses=False, sec=0, test_batch_size=5,
                 all_answers = test_data[query_structure]['answers'][qix:qix+test_batch_size]
                 targets = torch.arange(model.num_entities).to(model.device)
                 Q = model.forward_costs(query_structure, entities, relations, targets, invs=inverses)
-                if complex_solver == 'schur':
+                if sec == 'average':
+                    Q = torch.mean(Q, dim=-1)
+                else:
                     Q = Q[:,:,sec]
                 max_len = len(max(all_answers, key=len))
                 for i in range(max_len):
@@ -688,7 +695,6 @@ def test_batch(model, test_data, model_inverses=False, sec=0, test_batch_size=5,
             rd = {k: np.mean(all_avg_ranks <= k) for k in ks}
             mrr = np.reciprocal(stats.hmean(all_avg_ranks))
             rd['mrr'] = mrr if isinstance(mrr, float) else mrr[0]
-
             # rd['mr'] = np.mean(all_avg_ranks)
             results.append(rd)
 
