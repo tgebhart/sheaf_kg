@@ -386,6 +386,8 @@ class SheafE_Bilinear(SheafE_Multisection):
 
     def get_model_savename(self):
         savestruct = 'SheafE_Bilinear_{}embdim_{}esdim_{}sec_{}norm_{}lbda'
+        if self.orthogonal:
+            savestruct += '_{}orthogonal'.format(self.alpha_orthogonal)
         return savestruct.format(self.embedding_dim, self.edge_stalk_dim, self.num_sections, self.scoring_fct_norm, self.lbda)
 
     def _reset_parameters_(self):
@@ -494,6 +496,8 @@ class SheafE_Translational(SheafE_Bilinear):
             savestruct = 'SheafE_Translational_{}embdim_{}esdim_{}sec_{}norm_{}lbda'
         else:
             savestruct = 'SheafE_Translational_Rand_Diag_{}embdim_{}esdim_{}sec_{}norm_{}lbda'
+        if self.orthogonal:
+            savestruct += '_{}orthogonal'.format(self.alpha_orthogonal)
         return savestruct.format(self.embedding_dim, self.edge_stalk_dim, self.num_sections, self.scoring_fct_norm, self.lbda)
 
 class SheafE_Distributional_Normal(_OldAbstractModel):
