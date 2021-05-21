@@ -43,7 +43,7 @@ test_query_structures = ['1p','2p','3p','2i','3i','ip','pi']
 
 def run(model_name, dataset, num_epochs, embedding_dim, edge_stalk_dim, loss, training_loop, sampler,
     random_seed, num_sections, symmetric, orthogonal, alpha_orthogonal, lbda, scoring_fct_norm,
-    model_parameters, model_inverses, test_extension, complex_solver, dataset_loc=None):
+    model_parameters, model_inverses, test_extension, complex_solver, dataset_loc=None, lr=None):
 
     if dataset_loc is None:
         dataset_loc = dataset_loc_hint.format(dataset)
@@ -97,6 +97,7 @@ def run(model_name, dataset, num_epochs, embedding_dim, edge_stalk_dim, loss, tr
         evaluation_kwargs=dict(),
         model_kwargs=model_kwargs,
         training_loop=training_loop,
+        optimizer_kwargs=dict(lr=lr),
         loss=loss,
         loss_kwargs=dict()
     )
@@ -166,10 +167,12 @@ if __name__ == '__main__':
                         help='which complex queries harmonic extension solver to use')
     training_args.add_argument('--dataset-loc', type=str, default=None,
                         help='full path location to betae remapped dataset')
+    training_args.add_argument('--lr', type=float, default=1e-4,
+                        help='learning rate')
 
     args = parser.parse_args()
 
     run(args.model, args.dataset, args.num_epochs, args.embedding_dim, args.edge_stalk_dim, args.loss,
         args.training_loop, args.sampler, args.seed, args.num_sections, args.symmetric,
         args.orthogonal, args.alpha_orthogonal, args.lbda, args.scoring_fct_norm, args.model_parameters,
-        args.model_inverses, args.test_extension, args.complex_solver)
+        args.model_inverses, args.test_extension, args.complex_solver, dataset_loc=args.dataset_loc, lr=args.lr)
