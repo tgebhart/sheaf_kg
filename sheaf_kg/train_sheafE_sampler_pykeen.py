@@ -27,7 +27,7 @@ num_sections = None
 alpha_orthogonal = 0.1
 lbda = 0.5
 scoring_fct_norm = None
-dataset_loc = '../data/{}-betae'.format(dataset)
+dataset_loc_hint = '../data/{}-betae'
 
 loss = 'SoftplusLoss'
 
@@ -43,7 +43,10 @@ test_query_structures = ['1p','2p','3p','2i','3i','ip','pi']
 
 def run(model_name, dataset, num_epochs, embedding_dim, edge_stalk_dim, loss, training_loop, sampler,
     random_seed, num_sections, symmetric, orthogonal, alpha_orthogonal, lbda, scoring_fct_norm,
-    model_parameters, model_inverses, test_extension, complex_solver, dataset_loc=dataset_loc):
+    model_parameters, model_inverses, test_extension, complex_solver, dataset_loc=None):
+
+    if dataset_loc is None:
+        dataset_loc = dataset_loc_hint.format(dataset)
 
     timestr = time.strftime("%Y%m%d-%H%M")
 
@@ -73,9 +76,20 @@ def run(model_name, dataset, num_epochs, embedding_dim, edge_stalk_dim, loss, tr
     else:
         raise ValueError('Model {} not recognized from choices {}'.format(model_name, list(model_map.keys())))
 
+    if dataset == 'NELL995':
+        training = os.path.join(dataset_loc, 'train.txt')
+        testing = os.path.join(dataset_loc, 'test.txt')
+        pykeen_dataset_name = None
+    else:
+        training = None
+        testing = None
+        pykeen_dataset_name = dataset
+
     result = pipeline(
         model=model_cls,
-        dataset=dataset,
+        dataset=pykeen_dataset_name,
+        training=training,
+        testing=testing,
         random_seed=random_seed,
         device='gpu',
         dataset_kwargs=dict(create_inverse_triples=model_inverses),
@@ -95,7 +109,7 @@ def run(model_name, dataset, num_epochs, embedding_dim, edge_stalk_dim, loss, tr
     saveloc = os.path.join('../data',dataset,savename)
 
     if test_extension:
-        datasets = read_dataset(dataset_loc)
+        datasets = read_dataset(dataset_loc, test_query_structures=test_query_structures, model_inverses=model_inverses)
         datasets = dataset_to_device(shuffle_datasets(datasets), model.device)
         extension_df = test_batch(model, datasets['test-easy'], model_inverses=model_inverses, test_query_structures=test_query_structures, complex_solver=complex_solver)
         print(extension_df*100)
@@ -109,7 +123,7 @@ if __name__ == '__main__':
     # Training Hyperparameters
     training_args = parser.add_argument_group('training')
     training_args.add_argument('--dataset', type=str, default='WN18RR',
-                        choices=['WN18RR','WN18','FB15k','FB15k-237','YAGO310'],
+                        choices=['WN18RR','WN18','FB15k','FB15k-237','YAGO310','NELL995'],
                         help='dataset (default: WN18RR)')
     training_args.add_argument('--num-epochs', type=int, default=num_epochs,
                         help='number of training epochs')
@@ -150,7 +164,7 @@ if __name__ == '__main__':
                         help='whether to explicitly model inverse relations')
     training_args.add_argument('--complex-solver', type=str, required=False, default='schur',
                         help='which complex queries harmonic extension solver to use')
-    training_args.add_argument('--dataset-loc', type=str, default=dataset_loc,
+    training_args.add_argument('--dataset-loc', type=str, default=None,
                         help='full path location to betae remapped dataset')
 
     args = parser.parse_args()

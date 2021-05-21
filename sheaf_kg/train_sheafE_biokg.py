@@ -52,8 +52,7 @@ def run(num_epochs, loss, training_loop, random_seed, num_sections, orthogonal, 
         stopper_kwargs=dict(frequency=frequency, patience=patience),
         loss=loss,
         loss_kwargs=dict(),
-        negative_sampler=EntityTypeSampler,
-        negative_sampler_kwargs=dict(entity_types=biokg_type_list)
+        negative_sampler="PseudoTypedNegativeSampler"
     )
 
     res_df = result.metric_results.to_df()

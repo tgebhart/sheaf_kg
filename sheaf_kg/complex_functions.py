@@ -28,10 +28,77 @@ def L_p_traversal_transE(model, entities, relations, targets, invs=None, p=1):
         for ainvix in range(all_invs.shape[0]):
             invs = all_invs[ainvix]
             for invix in range(invs.shape[0]):
-                if invs[invix] == -1:
+                if invs[invix] == 1:
                     r[ainvix,invix] *= -1
 
     Q = -torch.linalg.norm(h[:, None, :] + torch.sum(r, dim=(1))[:, None, :] - t[None, :, :], dim=(-1), ord=p)
+    return Q
+
+def L_i_traversal_transE(model, entities, relations, targets, invs=None, p=1):
+    '''query of form (('e', ('r',)), ('e', ('r',)), ... , ('e', ('r',)))'''
+    all_ents = entities
+    all_rels = relations
+    all_invs = invs
+    n_ents = all_ents.shape[1]
+    num_intersects = all_ents.shape[1]
+    num_queries = all_ents.shape[0]
+
+    h = model.entity_embeddings(indices=all_ents.flatten()).view(num_queries, n_ents, -1)
+    r = model.relation_embeddings(indices=all_rels.flatten()).view(num_queries,n_ents,-1)
+    t = model.entity_embeddings(indices=targets)
+
+    if all_invs is not None:
+        for ainvix in range(all_invs.shape[0]):
+            invs = all_invs[ainvix]
+            for invix in range(invs.shape[0]):
+                if invs[invix] == 1:
+                    r[ainvix,invix] *= -1
+
+    Q = -torch.linalg.norm(torch.sum(h + r, dim=1)[:,None,:] - t[None, :, :], dim=(-1), ord=p)
+    return Q
+
+def L_ip_traversal_transE(model, entities, relations, targets, invs=None, p=1):
+    '''query of form ((('e', ('r',)), ('e', ('r',))), ('r',))'''
+    all_ents = entities
+    all_rels = relations
+    all_invs = invs
+    n_ents = all_ents.shape[1]
+    num_queries = all_ents.shape[0]
+
+    h = model.entity_embeddings(indices=all_ents.flatten()).view(num_queries, -1, model.embedding_dim)
+    r = model.relation_embeddings(indices=all_rels.flatten()).view(num_queries, -1, model.embedding_dim)
+    t = model.entity_embeddings(indices=targets)
+
+    if all_invs is not None:
+        for ainvix in range(all_invs.shape[0]):
+            invs = all_invs[ainvix]
+            for invix in range(invs.shape[0]):
+                if invs[invix] == 1:
+                    r[ainvix,invix] *= -1
+
+    Q = -torch.linalg.norm(torch.sum(h, dim=1)[:,None,:] + torch.sum(r, dim=1)[:,None,:] - t[None, :, :], dim=(-1), ord=p)
+    return Q
+
+def L_pi_traversal_transE(model, entities, relations, targets, invs=None, p=1):
+    '''query of form (('e', ('r', 'r')), ('e', ('r',)))'''
+    all_ents = entities
+    all_rels = relations
+    all_invs = invs
+    n_ents = all_ents.shape[1]
+    num_queries = all_ents.shape[0]
+
+    h = model.entity_embeddings(indices=all_ents.flatten()).view(num_queries, -1, model.embedding_dim)
+    r = model.relation_embeddings(indices=all_rels.flatten()).view(num_queries, -1, model.embedding_dim)
+    t = model.entity_embeddings(indices=targets)
+
+    if all_invs is not None:
+        for ainvix in range(all_invs.shape[0]):
+            invs = all_invs[ainvix]
+            for invix in range(invs.shape[0]):
+                if invs[invix] == 1:
+                    r[ainvix,invix] *= -1
+
+    Q = -torch.linalg.norm(torch.sum(h, dim=1)[:,None,:] + torch.sum(r, dim=1)[:,None,:] - t[None, :, :], dim=(-1), ord=p)
     return Q
 
 def L_p1_multisection(model, entities, relations, targets=None, invs=None):
@@ -67,7 +134,7 @@ def L_p_multisection(model, entities, relations, targets, invs=None):
         for ainvix in range(all_invs.shape[0]):
             invs = all_invs[ainvix]
             for invix in range(invs.shape[0]):
-                if invs[invix] == -1:
+                if invs[invix] == 1:
                     tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
@@ -107,7 +174,7 @@ def L_i_multisection(model, entities, relations, targets, invs=None):
         for ainvix in range(len(all_invs)):
             invs = all_invs[ainvix]
             for invix in range(len(invs)):
-                if invs[invix] == -1:
+                if invs[invix] == 1:
                     tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
@@ -143,7 +210,7 @@ def L_ip_multisection(model, entities, relations, targets, invs=None):
         for ainvix in range(all_invs.shape[0]):
             invs = all_invs[ainvix]
             for invix in range(invs.shape[0]):
-                if invs[invix] == -1:
+                if invs[invix] == 1:
                     tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
@@ -181,7 +248,7 @@ def L_pi_multisection(model, entities, relations, targets, invs=None):
         for ainvix in range(all_invs.shape[0]):
             invs = all_invs[ainvix]
             for invix in range(invs.shape[0]):
-                if invs[invix] == -1:
+                if invs[invix] == 1:
                     tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
@@ -232,7 +299,7 @@ def L_p_translational(model, entities, relations, targets, invs=None):
         for ainvix in range(all_invs.shape[0]):
             invs = all_invs[ainvix]
             for invix in range(invs.shape[0]):
-                if invs[invix] == -1:
+                if invs[invix] == 1:
                     tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
@@ -315,7 +382,7 @@ def L_ip_translational(model, entities, relations, targets, invs=None):
         for ainvix in range(all_invs.shape[0]):
             invs = all_invs[ainvix]
             for invix in range(invs.shape[0]):
-                if invs[invix] == -1:
+                if invs[invix] == 1:
                     tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
@@ -357,7 +424,7 @@ def L_pi_translational(model, entities, relations, targets, invs=None):
         for ainvix in range(all_invs.shape[0]):
             invs = all_invs[ainvix]
             for invix in range(invs.shape[0]):
-                if invs[invix] == -1:
+                if invs[invix] == 1:
                     tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
@@ -431,7 +498,7 @@ def L_p_cvx(model, entities, relations, targets, invs=None, layer=None):
         for ainvix in range(all_invs.shape[0]):
             invs = all_invs[ainvix]
             for invix in range(invs.shape[0]):
-                if invs[invix] == -1:
+                if invs[invix] == 1:
                     tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
@@ -472,7 +539,7 @@ def L_ip_cvx(model, entities, relations, targets, invs=None, layer=None):
         for ainvix in range(all_invs.shape[0]):
             invs = all_invs[ainvix]
             for invix in range(invs.shape[0]):
-                if invs[invix] == -1:
+                if invs[invix] == 1:
                     tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
@@ -513,7 +580,7 @@ def L_pi_cvx(model, entities, relations, targets, invs=None, layer=None):
         for ainvix in range(all_invs.shape[0]):
             invs = all_invs[ainvix]
             for invix in range(invs.shape[0]):
-                if invs[invix] == -1:
+                if invs[invix] == 1:
                     tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
@@ -553,7 +620,7 @@ def L_p_translational_cvx(model, entities, relations, targets, invs=None, layer=
         for ainvix in range(all_invs.shape[0]):
             invs = all_invs[ainvix]
             for invix in range(invs.shape[0]):
-                if invs[invix] == -1:
+                if invs[invix] == 1:
                     tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
@@ -596,7 +663,7 @@ def L_ip_translational_cvx(model, entities, relations, targets, invs=None, layer
         for ainvix in range(all_invs.shape[0]):
             invs = all_invs[ainvix]
             for invix in range(invs.shape[0]):
-                if invs[invix] == -1:
+                if invs[invix] == 1:
                     tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
@@ -638,7 +705,7 @@ def L_pi_translational_cvx(model, entities, relations, targets, invs=None, layer
         for ainvix in range(all_invs.shape[0]):
             invs = all_invs[ainvix]
             for invix in range(invs.shape[0]):
-                if invs[invix] == -1:
+                if invs[invix] == 1:
                     tmp = torch.clone(restrictions[ainvix,invix,0,:,:])
                     restrictions[ainvix,invix,0,:,:] = restrictions[ainvix,invix,1,:,:]
                     restrictions[ainvix,invix,1,:,:] = tmp
