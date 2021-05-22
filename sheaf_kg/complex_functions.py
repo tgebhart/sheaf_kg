@@ -745,35 +745,19 @@ def test_batch(model, test_data, model_inverses=False, sec='average', test_batch
                 else:
                     inverses = test_data[query_structure]['inverses'][qix:qix+test_batch_size]
                 all_answers = test_data[query_structure]['answers'][qix:qix+test_batch_size]
-                targets = torch.arange(model.num_entities).to(model.device)
-                Q = model.forward_costs(query_structure, entities, relations, targets, invs=inverses)
-                if sec == 'average':
-                    Q = torch.mean(Q, dim=-1)
-                else:
-                    Q = Q[:,:,sec]
-
-                for b in range(Q.shape[0]):
-                    answers = all_answers[b]
-                    for i in range(len(answers)):
-                        a = answers[i]
-                        msk = torch.ones(Q.shape[1], dtype=bool)
-                        msk[answers] = False
-                        msk[a] = True
-                        rank = rank_based_evaluator.compute_rank_from_scores(Q[b,a].unsqueeze(0), Q[b,msk].unsqueeze(0))
-                        avg_rank = rank['realistic'].cpu().numpy()
-                        all_avg_ranks.append(avg_rank[0])
-            all_avg_ranks = np.array(all_avg_ranks)
-            #     max_len = len(max(all_answers, key=len))
-            #     for i in range(max_len):
-            #         # answers = [a[i] if len(a) > i else a[-1] for a in all_answers ]
-            #         # idxs = np.arange(len(all_answers))
-            #         # answers = [a[i] for a in all_answers if len(a) > i]
-            #         # idxs = [j for j in range(len(all_answers)) if len(all_answers[j]) > i]
-            #         if len(answers) > 0:
-            #             ranks = rank_based_evaluator.compute_rank_from_scores(Q[np.vstack((idxs, answers))].unsqueeze(1), Q[idxs])
-            #             avg_rank = ranks['realistic'].cpu().numpy()
-            #             all_avg_ranks.append(avg_rank)
-            # all_avg_ranks = np.concatenate(all_avg_ranks)
+                targets = torch.arange(model.entity_embeddings(indices=None).shape[0]).to(model.device)
+                Q = fun_map[query_structure](model, entities, relations, targets, invs=inverses, p=1)
+                answer_lens = np.array([len(a) for a in all_answers])
+                max_len = answer_lens.max()
+                for l in np.unique(answer_lens):
+                    idxs = np.where(answer_lens == l)[0]
+                    answers = [all_answers[j] for j in idxs]
+                    filter_fix = torch.arange(l)
+                    for aix in range(len(idxs)):
+                        ranks = rank_based_evaluator.compute_rank_from_scores(Q[idxs[aix],answers[aix]].unsqueeze(1), Q[idxs[aix],:].unsqueeze(0))
+                        avg_rank = (torch.sort(ranks['realistic'].cpu(), dim=0)[0] - filter_fix).numpy()
+                        all_avg_ranks.append(avg_rank)
+            all_avg_ranks = np.concatenate(all_avg_ranks)
             rd = {k: np.mean(all_avg_ranks <= k) for k in ks}
             mrr = np.reciprocal(stats.hmean(all_avg_ranks))
             rd['mrr'] = mrr if isinstance(mrr, float) else mrr[0]
