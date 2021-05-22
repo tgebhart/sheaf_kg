@@ -43,7 +43,7 @@ test_query_structures = ['1p','2p','3p','2i','3i','ip','pi']
 
 def run(model_name, dataset, num_epochs, embedding_dim, edge_stalk_dim, loss, training_loop, sampler,
     random_seed, num_sections, symmetric, orthogonal, alpha_orthogonal, lbda, scoring_fct_norm,
-    model_parameters, model_inverses, test_extension, complex_solver, dataset_loc=None, lr=None):
+    model_parameters, model_inverses, test_extension, complex_solver, dataset_loc=None, lr=None, num_negs_per_pos=1):
 
     if dataset_loc is None:
         dataset_loc = dataset_loc_hint.format(dataset)
@@ -99,7 +99,8 @@ def run(model_name, dataset, num_epochs, embedding_dim, edge_stalk_dim, loss, tr
         training_loop=training_loop,
         optimizer_kwargs=dict(lr=lr),
         loss=loss,
-        loss_kwargs=dict()
+        loss_kwargs=dict(),
+        negative_sampler_kwargs=dict(num_negs_per_pos=num_negs_per_pos)
     )
 
     res_df = result.metric_results.to_df()
@@ -169,10 +170,12 @@ if __name__ == '__main__':
                         help='full path location to betae remapped dataset')
     training_args.add_argument('--lr', type=float, default=1e-4,
                         help='learning rate')
+    training_args.add_argument('--num-negs-per-pos', type=int, default=1,
+                        help='number of negatively-sampled examples per positive triplet')
 
     args = parser.parse_args()
 
     run(args.model, args.dataset, args.num_epochs, args.embedding_dim, args.edge_stalk_dim, args.loss,
         args.training_loop, args.sampler, args.seed, args.num_sections, args.symmetric,
         args.orthogonal, args.alpha_orthogonal, args.lbda, args.scoring_fct_norm, args.model_parameters,
-        args.model_inverses, args.test_extension, args.complex_solver, dataset_loc=args.dataset_loc, lr=args.lr)
+        args.model_inverses, args.test_extension, args.complex_solver, dataset_loc=args.dataset_loc, lr=args.lr, num_negs_per_pos=args.num_negs_per_pos)

@@ -751,14 +751,29 @@ def test_batch(model, test_data, model_inverses=False, sec='average', test_batch
                     Q = torch.mean(Q, dim=-1)
                 else:
                     Q = Q[:,:,sec]
-                max_len = len(max(all_answers, key=len))
-                for i in range(max_len):
-                    answers = [a[i] if len(a) > i else a[-1] for a in all_answers ]
-                    if len(answers) > 0:
-                        ranks = rank_based_evaluator.compute_rank_from_scores(Q[np.vstack((np.arange(len(answers)), answers))].unsqueeze(1), Q)
-                        avg_rank = ranks['realistic'].cpu().numpy()
-                        all_avg_ranks.append(avg_rank)
-            all_avg_ranks = np.concatenate(all_avg_ranks)
+
+                for b in range(Q.shape[0]):
+                    answers = all_answers[b]
+                    for i in range(len(answers)):
+                        a = answers[i]
+                        msk = torch.ones(Q.shape[1], dtype=bool)
+                        msk[answers] = False
+                        msk[a] = True
+                        rank = rank_based_evaluator.compute_rank_from_scores(Q[b,a].unsqueeze(0), Q[b,msk].unsqueeze(0))
+                        avg_rank = rank['realistic'].cpu().numpy()
+                        all_avg_ranks.append(avg_rank[0])
+            all_avg_ranks = np.array(all_avg_ranks)
+            #     max_len = len(max(all_answers, key=len))
+            #     for i in range(max_len):
+            #         # answers = [a[i] if len(a) > i else a[-1] for a in all_answers ]
+            #         # idxs = np.arange(len(all_answers))
+            #         # answers = [a[i] for a in all_answers if len(a) > i]
+            #         # idxs = [j for j in range(len(all_answers)) if len(all_answers[j]) > i]
+            #         if len(answers) > 0:
+            #             ranks = rank_based_evaluator.compute_rank_from_scores(Q[np.vstack((idxs, answers))].unsqueeze(1), Q[idxs])
+            #             avg_rank = ranks['realistic'].cpu().numpy()
+            #             all_avg_ranks.append(avg_rank)
+            # all_avg_ranks = np.concatenate(all_avg_ranks)
             rd = {k: np.mean(all_avg_ranks <= k) for k in ks}
             mrr = np.reciprocal(stats.hmean(all_avg_ranks))
             rd['mrr'] = mrr if isinstance(mrr, float) else mrr[0]
