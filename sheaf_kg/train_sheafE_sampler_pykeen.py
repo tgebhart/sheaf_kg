@@ -43,7 +43,8 @@ test_query_structures = ['2p','3p','2i','3i','ip','pi']
 
 def run(model_name, dataset, num_epochs, embedding_dim, edge_stalk_dim, loss, training_loop, sampler,
     random_seed, num_sections, symmetric, orthogonal, alpha_orthogonal, lbda, scoring_fct_norm,
-    model_parameters, model_inverses, test_extension, complex_solver, dataset_loc=None, lr=None, num_negs_per_pos=1):
+    model_parameters, model_inverses, test_extension, complex_solver, dataset_loc=None, lr=None, num_negs_per_pos=1,
+    device='gpu'):
 
     if dataset_loc is None:
         dataset_loc = dataset_loc_hint.format(dataset)
@@ -91,7 +92,7 @@ def run(model_name, dataset, num_epochs, embedding_dim, edge_stalk_dim, loss, tr
         training=training,
         testing=testing,
         random_seed=random_seed,
-        device='gpu',
+        device=device,
         dataset_kwargs=dict(create_inverse_triples=model_inverses),
         training_kwargs=dict(num_epochs=num_epochs,sampler=sampler),
         evaluation_kwargs=dict(),
@@ -168,6 +169,8 @@ if __name__ == '__main__':
                         help='which complex queries harmonic extension solver to use')
     training_args.add_argument('--dataset-loc', type=str, default=None,
                         help='full path location to betae remapped dataset')
+    training_args.add_argument('--device', type=str, default='gpu',
+                        help='device to use for training/testing')
     training_args.add_argument('--lr', type=float, default=1e-4,
                         help='learning rate')
     training_args.add_argument('--num-negs-per-pos', type=int, default=1,
@@ -178,4 +181,5 @@ if __name__ == '__main__':
     run(args.model, args.dataset, args.num_epochs, args.embedding_dim, args.edge_stalk_dim, args.loss,
         args.training_loop, args.sampler, args.seed, args.num_sections, args.symmetric,
         args.orthogonal, args.alpha_orthogonal, args.lbda, args.scoring_fct_norm, args.model_parameters,
-        args.model_inverses, args.test_extension, args.complex_solver, dataset_loc=args.dataset_loc, lr=args.lr, num_negs_per_pos=args.num_negs_per_pos)
+        args.model_inverses, args.test_extension, args.complex_solver, dataset_loc=args.dataset_loc, lr=args.lr,
+        num_negs_per_pos=args.num_negs_per_pos, device=args.device)
