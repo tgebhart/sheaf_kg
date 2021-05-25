@@ -638,7 +638,7 @@ def L_p_translational_cvx(model, entities, relations, targets, invs=None, layer=
             r = xopts.reshape((-1,model.embedding_dim))
             t = r[-1]
             # ret[qix,:] = -torch.linalg.norm(t[None,:] - target_embeddings, ord=2, dim=1)
-            ret[qix,:,sec] = -torch.matmul(target_embeddings, t)
+            ret[qix,:,sec] = -torch.matmul(target_embeddings[:,:,sec], t)
     return ret
 
 def L_ip_translational_cvx(model, entities, relations, targets, invs=None, layer=None):
@@ -680,7 +680,7 @@ def L_ip_translational_cvx(model, entities, relations, targets, invs=None, layer
             r = xopts.reshape((-1,model.embedding_dim))
             t = r[-1]
             # ret[qix,:] = -torch.linalg.norm(t[None,:] - target_embeddings, ord=2, dim=1)
-            ret[qix,:,sec] = -torch.matmul(target_embeddings, t)
+            ret[qix,:,sec] = -torch.matmul(target_embeddings[:,:,sec], t)
     return ret
 
 def L_pi_translational_cvx(model, entities, relations, targets, invs=None, layer=None):
@@ -722,7 +722,7 @@ def L_pi_translational_cvx(model, entities, relations, targets, invs=None, layer
             r = xopts.reshape((-1,model.embedding_dim))
             t = r[-1]
             # ret[qix,:] = -torch.linalg.norm(t[None,:] - target_embeddings, ord=2, dim=1)
-            ret[qix,:,sec] = -torch.matmul(target_embeddings, t)
+            ret[qix,:,sec] = -torch.matmul(target_embeddings[:,:,sec], t)
     return ret
 
 def test_batch(model, test_data, model_inverses=False, sec='average', test_batch_size=5,
