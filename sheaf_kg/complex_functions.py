@@ -735,7 +735,7 @@ def test_batch(model, test_data, model_inverses=False, sec='average', test_batch
             all_avg_ranks = []
             cnt = 0
             num_test = len(test_data[query_structure]['answers'])
-            for qix in tqdm(range(0, num_test//2, test_batch_size)):
+            for qix in tqdm(range(0, num_test, test_batch_size)):
                 if num_test - qix == 1:
                     continue
                 entities = test_data[query_structure]['entities'][qix:qix+test_batch_size]
