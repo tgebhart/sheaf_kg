@@ -509,7 +509,7 @@ def L_p_cvx(model, entities, relations, targets, invs=None, layer=None):
     d = harmonic_extension.coboundary(edge_indices, restrictions)
     ret = torch.empty((num_queries, targets.shape[0], model.num_sections))
     for qix in range(num_queries):
-        for sec in model.num_sections:
+        for sec in range(model.num_sections):
             xopts, = layer(d[qix].to('cpu'), source_embeddings[qix,:,sec].flatten().to('cpu'))
             r = xopts.reshape((-1,model.embedding_dim))
             t = r[-1]
@@ -550,7 +550,7 @@ def L_ip_cvx(model, entities, relations, targets, invs=None, layer=None):
     d = harmonic_extension.coboundary(edge_indices, restrictions)
     ret = torch.empty((num_queries, targets.shape[0], model.num_sections))
     for qix in range(num_queries):
-        for sec in model.num_sections:
+        for sec in range(model.num_sections):
             xopts, = layer(d[qix].to('cpu'), source_embeddings[qix,:,sec].flatten().to('cpu'))
             r = xopts.reshape((-1,model.embedding_dim))
             t = r[-1]
@@ -591,7 +591,7 @@ def L_pi_cvx(model, entities, relations, targets, invs=None, layer=None):
     d = harmonic_extension.coboundary(edge_indices, restrictions)
     ret = torch.empty((num_queries, targets.shape[0], model.num_sections))
     for qix in range(num_queries):
-        for sec in model.num_sections:
+        for sec in range(model.num_sections):
             xopts, = layer(d[qix].to('cpu'), source_embeddings[qix,:,sec].flatten().to('cpu'))
             r = xopts.reshape((-1,model.embedding_dim))
             t = r[-1]
@@ -633,7 +633,7 @@ def L_p_translational_cvx(model, entities, relations, targets, invs=None, layer=
     d = harmonic_extension.coboundary(edge_indices, restrictions)
     ret = torch.empty((num_queries, targets.shape[0], model.num_sections))
     for qix in range(num_queries):
-        for sec in model.num_sections:
+        for sec in range(model.num_sections):
             xopts, = layer(d[qix].to('cpu'), source_embeddings[qix,:,sec].flatten().to('cpu'), b[qix,:,sec].flatten().to('cpu'))
             r = xopts.reshape((-1,model.embedding_dim))
             t = r[-1]
@@ -675,7 +675,7 @@ def L_ip_translational_cvx(model, entities, relations, targets, invs=None, layer
     d = harmonic_extension.coboundary(edge_indices, restrictions)
     ret = torch.empty((num_queries, targets.shape[0], model.num_sections))
     for qix in range(num_queries):
-        for sec in model.num_sections:
+        for sec in range(model.num_sections):
             xopts, = layer(d[qix].to('cpu'), source_embeddings[qix,:,sec].flatten().to('cpu'), b[qix,:,sec].flatten().to('cpu'))
             r = xopts.reshape((-1,model.embedding_dim))
             t = r[-1]
@@ -717,7 +717,7 @@ def L_pi_translational_cvx(model, entities, relations, targets, invs=None, layer
     d = harmonic_extension.coboundary(edge_indices, restrictions)
     ret = torch.empty((num_queries, targets.shape[0], model.num_sections))
     for qix in range(num_queries):
-        for sec in model.num_sections:
+        for sec in range(model.num_sections):
             xopts, = layer(d[qix].to('cpu'), source_embeddings[qix,:,sec].flatten().to('cpu'), b[qix,:,sec].flatten().to('cpu'))
             r = xopts.reshape((-1,model.embedding_dim))
             t = r[-1]
