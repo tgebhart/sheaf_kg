@@ -747,6 +747,10 @@ def test_batch(model, test_data, model_inverses=False, sec='average', test_batch
                 all_answers = test_data[query_structure]['answers'][qix:qix+test_batch_size]
                 targets = torch.arange(model.num_entities).to(model.device)
                 Q = model.forward_costs(query_structure , entities, relations, targets, invs=inverses)
+                if sec == 'average':
+                    Q = torch.mean(Q, dim=-1)
+                else:
+                    Q = Q[:,:,sec]
                 answer_lens = np.array([len(a) for a in all_answers])
                 max_len = answer_lens.max()
                 for l in np.unique(answer_lens):

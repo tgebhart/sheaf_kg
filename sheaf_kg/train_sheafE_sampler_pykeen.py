@@ -38,7 +38,7 @@ model_map = {'Diag': SheafE_Diag,
             'Distributional_Normal': SheafE_Distributional_Normal,
             'Distributional_Beta': SheafE_Distributional_Beta}
 
-test_query_structures = ['2p','3p','2i','3i','ip','pi']
+test_query_structures = ['1p','2p','3p','2i','3i','ip','pi']
 # test_query_structures = ['pi','ip']
 
 def run(model_name, dataset, num_epochs, embedding_dim, edge_stalk_dim, loss, training_loop, sampler,
