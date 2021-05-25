@@ -746,7 +746,7 @@ def test_batch(model, test_data, model_inverses=False, sec='average', test_batch
                     inverses = test_data[query_structure]['inverses'][qix:qix+test_batch_size]
                 all_answers = test_data[query_structure]['answers'][qix:qix+test_batch_size]
                 targets = torch.arange(model.ent_embeddings.shape[0])
-                Q = fun_map[query_structure](model, entities, relations, targets, invs=inverses, p=1)
+                Q = model.forward_costs(query_structure , entities, relations, targets, invs=inverses)
                 answer_lens = np.array([len(a) for a in all_answers])
                 max_len = answer_lens.max()
                 for l in np.unique(answer_lens):
