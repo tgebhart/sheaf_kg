@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 import pykeen
 import torch
+from torch.nn import functional
 
 from train_sheafE_betae import read_dataset, shuffle_datasets, dataset_to_device, sample_answers
 from complex_functions import test_batch
@@ -15,6 +16,8 @@ from sheafE_models import SheafE_Multisection, SheafE_Diag, SheafE_Translational
                         SheafE_Bilinear, SheafE_Distributional_Normal, SheafE_Distributional_Beta
 
 from pykeen.pipeline import pipeline
+from pykeen.losses import PairwiseLoss
+from pykeen.triples import TriplesFactory
 
 dataset = 'FB15k-237'
 num_epochs = 1000
@@ -41,7 +44,32 @@ model_map = {'Diag': SheafE_Diag,
 test_query_structures = ['1p','2p','3p','2i','3i','ip','pi']
 # test_query_structures = ['pi','ip']
 
-def run(model_name, dataset, num_epochs, embedding_dim, edge_stalk_dim, loss, training_loop, sampler,
+MARGIN_ACTIVATIONS = {
+    'relu': functional.relu,
+    'softplus': functional.softplus,
+}
+class QuadraticLoss(PairwiseLoss):
+
+    def __init__(
+        self,
+        margin_activation = 'relu',
+        reduction: str = 'sum',
+    ):
+
+        super().__init__(reduction=reduction)
+        if isinstance(margin_activation, str):
+            self.margin_activation = MARGIN_ACTIVATIONS[margin_activation]
+        else:
+            self.margin_activation = margin_activation
+
+    def forward(
+        self,
+        pos_scores: torch.FloatTensor,
+        neg_scores: torch.FloatTensor,
+    ) -> torch.FloatTensor:  # noqa: D102
+        return self.margin_activation(self._reduction_method(neg_scores) - self._reduction_method(pos_scores))
+
+def run(model_name, dataset, num_epochs, embedding_dim, edge_stalk_dim, loss_name, training_loop, sampler,
     random_seed, num_sections, symmetric, orthogonal, alpha_orthogonal, lbda, scoring_fct_norm,
     model_parameters, model_inverses, test_extension, complex_solver, dataset_loc=None, lr=None, num_negs_per_pos=1,
     device='gpu'):
@@ -78,13 +106,20 @@ def run(model_name, dataset, num_epochs, embedding_dim, edge_stalk_dim, loss, tr
         raise ValueError('Model {} not recognized from choices {}'.format(model_name, list(model_map.keys())))
 
     if dataset == 'NELL995':
-        training = os.path.join(dataset_loc, 'train.txt')
-        testing = os.path.join(dataset_loc, 'test.txt')
+        training = TriplesFactory.from_path(os.path.join(dataset_loc, 'train.txt'),
+                                            create_inverse_triples=model_inverses)
+        testing = TriplesFactory.from_path(os.path.join(dataset_loc, 'test.txt'),
+                                            create_inverse_triples=model_inverses)
         pykeen_dataset_name = None
     else:
         training = None
         testing = None
         pykeen_dataset_name = dataset
+
+    if loss_name == 'QuadraticLoss':
+        loss = QuadraticLoss()
+    else:
+        loss = loss_name
 
     result = pipeline(
         model=model_cls,
@@ -108,7 +143,7 @@ def run(model_name, dataset, num_epochs, embedding_dim, edge_stalk_dim, loss, tr
 
     model = result.model
     model_savename = model.get_model_savename()
-    savename = model_savename + '_{}epochs_{}loss_{}_{}'.format(num_epochs,loss,sampler,timestr)
+    savename = model_savename + '_{}epochs_{}loss_{}_{}'.format(num_epochs,loss_name,sampler,timestr)
     saveloc = os.path.join('../data',dataset,savename)
 
     if test_extension:

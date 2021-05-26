@@ -141,7 +141,7 @@ class SheafE_Multisection(_OldAbstractModel):
             t = torch.index_select(self.ent_embeddings, 0, targets)
             ents = torch.cat([h,t],dim=0)
             I = self.I.reshape((1, self.I.shape[0], self.I.shape[1]))
-            orth_scores = self.alpha_orthogonal * torch.norm(ents.permute(0,2,1)@ents - I, p=self.scoring_fct_norm)
+            orth_scores = self.alpha_orthogonal * torch.sum(torch.norm(ents.permute(0,2,1)@ents - I, dim=(-2,-1), p=2))
             return score - orth_scores
         return score
 
@@ -169,7 +169,7 @@ class SheafE_Multisection(_OldAbstractModel):
             t = torch.index_select(self.ent_embeddings, 0, hrt_batch[:, 2]).view(-1, self.embedding_dim, self.num_sections)
             ents = torch.cat([h,t],dim=0)
             I = self.I.reshape((1, self.I.shape[0], self.I.shape[1]))
-            orth_scores = self.alpha_orthogonal * torch.norm(ents.permute(0,2,1)@ents - I, p=self.scoring_fct_norm)
+            orth_scores = self.alpha_orthogonal * torch.sum(torch.norm(ents.permute(0,2,1)@ents - I, dim=(-2,-1), p=2))
             return scores - orth_scores
         return scores
 
@@ -415,7 +415,7 @@ class SheafE_Bilinear(SheafE_Multisection):
             t = torch.index_select(self.ent_embeddings, 0, hrt_batch[:, 2]).view(-1, self.embedding_dim, self.num_sections)
             ents = torch.cat([h,t],dim=0)
             I = self.I.reshape((1, self.I.shape[0], self.I.shape[1]))
-            orth_scores = self.alpha_orthogonal * torch.norm(ents.permute(0,2,1)@ents - I, p=self.scoring_fct_norm)
+            orth_scores = self.alpha_orthogonal * torch.sum(torch.norm(ents.permute(0,2,1)@ents - I, dim=(-2,-1), p=2))
             return scores - orth_scores
         return scores
 
