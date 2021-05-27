@@ -143,7 +143,7 @@ def run(model_name, dataset, num_epochs, embedding_dim, edge_stalk_dim, loss_nam
 
     model = result.model
     model_savename = model.get_model_savename()
-    savename = model_savename + '_{}epochs_{}loss_{}_{}'.format(num_epochs,loss_name,sampler,timestr)
+    savename = model_savename + '_{}epochs_{}loss_{}_{}seed_{}'.format(num_epochs,loss_name,sampler,seed,timestr)
     saveloc = os.path.join('../data',dataset,savename)
 
     if test_extension:
