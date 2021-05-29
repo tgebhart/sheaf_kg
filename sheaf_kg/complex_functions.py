@@ -10,7 +10,7 @@ from scipy import stats
 
 import sheaf_kg.batch_harmonic_extension as harmonic_extension
 
-def L_p_traversal_transE(model, entities, relations, targets, invs=None, p=1):
+def L_p_traversal_transE(model, entities, relations, targets, invs=None, p=1, variety='pykeen'):
     '''query of form ('e', ('r', 'r', ... , 'r')).
     here we assume 2 or more relations are present so 2p or greater
     '''
@@ -20,9 +20,16 @@ def L_p_traversal_transE(model, entities, relations, targets, invs=None, p=1):
     n_path_ents = all_rels.shape[1]
     num_queries = all_ents.shape[0]
 
-    h = model.entity_embeddings(indices=all_ents)
-    r = model.relation_embeddings(indices=all_rels.reshape(num_queries,-1)).reshape((num_queries,all_rels.shape[1],model.embedding_dim))
-    t = model.entity_embeddings(indices=targets)
+    if variety == 'pykeen':
+        h = model.entity_embeddings(indices=all_ents)
+        r = model.relation_embeddings(indices=all_rels.reshape(num_queries,-1)).reshape((num_queries,all_rels.shape[1],model.embedding_dim))
+        t = model.entity_embeddings(indices=targets)
+    elif variety == 'sheafE':
+        h = torch.index_select(model.ent_embeddings, 0, all_ents).squeeze(-1)
+        r = torch.index_select(model.edge_cochains, 0, all_rels.flatten()).view(num_queries, all_rels.shape[1], model.embedding_dim)
+        t = torch.index_select(model.ent_embeddings, 0, targets).squeeze(-1)
+    else:
+        raise ValueError(f'variety type {variety} not understood')
 
     if all_invs is not None:
         for ainvix in range(all_invs.shape[0]):
@@ -34,7 +41,7 @@ def L_p_traversal_transE(model, entities, relations, targets, invs=None, p=1):
     Q = -torch.linalg.norm(h[:, None, :] + torch.sum(r, dim=(1))[:, None, :] - t[None, :, :], dim=(-1), ord=p)
     return Q
 
-def L_i_traversal_transE(model, entities, relations, targets, invs=None, p=1):
+def L_i_traversal_transE(model, entities, relations, targets, invs=None, p=1, variety='pykeen'):
     '''query of form (('e', ('r',)), ('e', ('r',)), ... , ('e', ('r',)))'''
     all_ents = entities
     all_rels = relations
@@ -43,9 +50,17 @@ def L_i_traversal_transE(model, entities, relations, targets, invs=None, p=1):
     num_intersects = all_ents.shape[1]
     num_queries = all_ents.shape[0]
 
-    h = model.entity_embeddings(indices=all_ents.flatten()).view(num_queries, n_ents, -1)
-    r = model.relation_embeddings(indices=all_rels.flatten()).view(num_queries,n_ents,-1)
-    t = model.entity_embeddings(indices=targets)
+    if variety == 'pykeen':
+        h = model.entity_embeddings(indices=all_ents.flatten()).view(num_queries, n_ents, -1)
+        r = model.relation_embeddings(indices=all_rels.flatten()).view(num_queries,n_ents,-1)
+        t = model.entity_embeddings(indices=targets)
+    elif variety == 'sheafE':
+        h = torch.index_select(model.ent_embeddings, 0, all_ents.flatten()).view(num_queries, n_ents, -1)
+        r = torch.index_select(model.edge_cochains, 0, all_rels.flatten()).view(num_queries, n_ents, -1)
+        t = torch.index_select(model.ent_embeddings, 0, targets).squeeze(-1)
+    else:
+        raise ValueError(f'variety type {variety} not understood')
+
 
     if all_invs is not None:
         for ainvix in range(all_invs.shape[0]):
@@ -57,7 +72,7 @@ def L_i_traversal_transE(model, entities, relations, targets, invs=None, p=1):
     Q = -torch.linalg.norm(torch.sum(h + r, dim=1)[:,None,:] - t[None, :, :], dim=(-1), ord=p)
     return Q
 
-def L_ip_traversal_transE(model, entities, relations, targets, invs=None, p=1):
+def L_ip_traversal_transE(model, entities, relations, targets, invs=None, p=1, variety='pykeen'):
     '''query of form ((('e', ('r',)), ('e', ('r',))), ('r',))'''
     all_ents = entities
     all_rels = relations
@@ -65,9 +80,16 @@ def L_ip_traversal_transE(model, entities, relations, targets, invs=None, p=1):
     n_ents = all_ents.shape[1]
     num_queries = all_ents.shape[0]
 
-    h = model.entity_embeddings(indices=all_ents.flatten()).view(num_queries, -1, model.embedding_dim)
-    r = model.relation_embeddings(indices=all_rels.flatten()).view(num_queries, -1, model.embedding_dim)
-    t = model.entity_embeddings(indices=targets)
+    if variety == 'pykeen':
+        h = model.entity_embeddings(indices=all_ents.flatten()).view(num_queries, -1, model.embedding_dim)
+        r = model.relation_embeddings(indices=all_rels.flatten()).view(num_queries, -1, model.embedding_dim)
+        t = model.entity_embeddings(indices=targets)
+    elif variety == 'sheafE':
+        h = torch.index_select(model.ent_embeddings, 0, all_ents.flatten()).view(num_queries, -1, model.embedding_dim)
+        r = torch.index_select(model.edge_cochains, 0, all_rels.flatten()).view(num_queries, -1, model.embedding_dim)
+        t = torch.index_select(model.ent_embeddings, 0, targets).squeeze(-1)
+    else:
+        raise ValueError(f'variety type {variety} not understood')
 
     if all_invs is not None:
         for ainvix in range(all_invs.shape[0]):
@@ -79,7 +101,7 @@ def L_ip_traversal_transE(model, entities, relations, targets, invs=None, p=1):
     Q = -torch.linalg.norm(torch.sum(h, dim=1)[:,None,:] + torch.sum(r, dim=1)[:,None,:] - t[None, :, :], dim=(-1), ord=p)
     return Q
 
-def L_pi_traversal_transE(model, entities, relations, targets, invs=None, p=1):
+def L_pi_traversal_transE(model, entities, relations, targets, invs=None, p=1, variety='pykeen'):
     '''query of form (('e', ('r', 'r')), ('e', ('r',)))'''
     all_ents = entities
     all_rels = relations
@@ -87,9 +109,16 @@ def L_pi_traversal_transE(model, entities, relations, targets, invs=None, p=1):
     n_ents = all_ents.shape[1]
     num_queries = all_ents.shape[0]
 
-    h = model.entity_embeddings(indices=all_ents.flatten()).view(num_queries, -1, model.embedding_dim)
-    r = model.relation_embeddings(indices=all_rels.flatten()).view(num_queries, -1, model.embedding_dim)
-    t = model.entity_embeddings(indices=targets)
+    if variety == 'pykeen':
+        h = model.entity_embeddings(indices=all_ents.flatten()).view(num_queries, -1, model.embedding_dim)
+        r = model.relation_embeddings(indices=all_rels.flatten()).view(num_queries, -1, model.embedding_dim)
+        t = model.entity_embeddings(indices=targets)
+    elif variety == 'sheafE':
+        h = torch.index_select(model.ent_embeddings, 0, all_ents.flatten()).view(num_queries, -1, model.embedding_dim)
+        r = torch.index_select(model.edge_cochains, 0, all_rels.flatten()).view(num_queries, -1, model.embedding_dim)
+        t = torch.index_select(model.ent_embeddings, 0, targets).squeeze(-1)
+    else:
+        raise ValueError(f'variety type {variety} not understood')
 
     if all_invs is not None:
         for ainvix in range(all_invs.shape[0]):
