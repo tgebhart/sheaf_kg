@@ -25,7 +25,7 @@ num_sections = None
 alpha_orthogonal = 0.1
 scoring_fct_norm = None
 
-loss = 'SoftplusLoss'
+loss = 'MarginRankingLoss'
 
 model_map = {'Diag': SheafE_Diag,
             'Multisection': SheafE_Multisection,

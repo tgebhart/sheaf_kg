@@ -21,7 +21,7 @@ training_loop = 'slcwa'
 frequency = 50
 patience = 100
 alpha_orthogonal = 0.01
-relation_mapping_location = '/home/gebhart/.data/pykeen/datasets/ogbbiokg/ogbl_biokg/mapping/relidx2relname.csv.gz'
+relation_mapping_location = '~/.data/pykeen/datasets/ogbbiokg/ogbl_biokg/mapping/relidx2relname.csv.gz'
 biokg_type_list = ['protein','function','sideeffect','drug','disease']
 
 loss = 'SoftplusLoss'

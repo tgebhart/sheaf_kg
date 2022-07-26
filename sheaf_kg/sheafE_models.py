@@ -1,11 +1,11 @@
 from functools import partial
+from typing import Optional
 
 import numpy as np
 import pykeen
 import torch
 
 from pykeen.pipeline import pipeline
-from typing import Optional
 from pykeen.models import StructuredEmbedding
 from pykeen.models.base import _OldAbstractModel
 from pykeen.nn import Embedding

@@ -26,7 +26,7 @@ scoring_fct_norm = 2
 batch_size = 100
 test_batch_size = 5
 dataset_loc = '../data/{}-betae'.format(dataset)
-loss = 'SoftplusLoss'
+loss = 'MarginRankingLoss'
 
 # train_query_structures = ['1p','2p','3p','2i','3i']
 train_query_structures = ['1p','2p','3p']

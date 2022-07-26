@@ -31,8 +31,7 @@ alpha_orthogonal = 0.1
 lbda = 0.0
 scoring_fct_norm = None
 dataset_loc_hint = '../data/{}-betae'
-
-loss = 'SoftplusLoss'
+loss = 'MarginRankingLoss'
 
 model_map = {'Diag': SheafE_Diag,
             'Multisection': SheafE_Multisection,

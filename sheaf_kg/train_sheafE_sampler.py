@@ -31,8 +31,8 @@ test_every = 1
 scoring_fct_norm = 2
 batch_size = 100
 test_batch_size = 5
-dataset_loc = '/home/gebhart/projects/sheaf_kg/data/{}-betae'.format(dataset)
-loss = 'SoftplusLoss'
+dataset_loc = '../data/{}-betae'.format(dataset)
+loss = 'MarginRankingLoss'
 
 train_query_structures = ['1p','2p','3p','2i','3i']
 test_query_structures = ['1p','2p','3p','2i','3i','ip','pi']
