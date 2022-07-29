@@ -2,9 +2,10 @@
 
 """Implementation of structured model (SE)."""
 
-from typing import Any, ClassVar, Mapping, Optional
+from typing import Any, Callable, ClassVar, Mapping, Optional
 
 from class_resolver import Hint, HintOrType, OptionalKwargs
+from torch import nn
 from torch.nn import functional
 
 from pykeen.models.nbase import ERModel
@@ -13,8 +14,13 @@ from pykeen.nn.init import xavier_uniform_, xavier_uniform_norm_
 from pykeen.typing import Constrainer, Initializer
 from pykeen.regularizers import Regularizer
 
-from sheaf_kg.interactions.multisection_structured_embedding import MultisectionStructuredEmbeddingInteraction
-from sheaf_kg.regularizers.multisection_regularizers import OrthogonalSectionsRegularizer
+from sheaf_kg.interactions.multisection_structured_embedding import (
+    MultisectionStructuredEmbeddingInteraction,
+)
+from sheaf_kg.regularizers.multisection_regularizers import (
+    OrthogonalSectionsRegularizer,
+)
+from sheaf_kg.representations.parameterized_embedding import ParameterizedEmbedding
 
 __all__ = [
     "MultisectionSE",
@@ -34,7 +40,7 @@ class MultisectionStructuredEmbedding(ERModel):
         *,
         C0_dimension: int = 50,
         num_sections: int = 3,
-        C1_dimension = 20,
+        C1_dimension=20,
         scoring_fct_norm: int = 2,
         entity_initializer: Hint[Initializer] = xavier_uniform_,
         entity_constrainer: Hint[Constrainer] = functional.normalize,
@@ -42,6 +48,7 @@ class MultisectionStructuredEmbedding(ERModel):
         regularizer_kwargs: OptionalKwargs = None,
         entity_constrainer_kwargs: Optional[Mapping[str, Any]] = None,
         relation_initializer: Hint[Initializer] = xavier_uniform_norm_,
+        relation_parametrization: Optional[Callable] = None,
         **kwargs,
     ) -> None:
         r"""Initialize SE.
@@ -62,21 +69,24 @@ class MultisectionStructuredEmbedding(ERModel):
                 # power_norm=True,
             ),
             entity_representations_kwargs=dict(
-                shape=(C0_dimension,num_sections),
+                shape=(C0_dimension, num_sections),
                 initializer=entity_initializer,
                 constrainer=entity_constrainer,
                 constrainer_kwargs=entity_constrainer_kwargs,
                 regularizer=regularizer,
                 regularizer_kwargs=regularizer_kwargs,
             ),
+            relation_representations=ParameterizedEmbedding,
             relation_representations_kwargs=[
                 dict(
                     shape=(C1_dimension, C0_dimension),
                     initializer=relation_initializer,
+                    parametrization=relation_parametrization,
                 ),
                 dict(
                     shape=(C1_dimension, C0_dimension),
                     initializer=relation_initializer,
+                    parametrization=relation_parametrization,
                 ),
             ],
             **kwargs,
