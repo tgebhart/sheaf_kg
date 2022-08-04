@@ -36,32 +36,6 @@ class ExtensionInteraction(MultisectionStructuredEmbeddingInteraction):
             raise ValueError(f'training mask percentage must be between 0 and 1, got {training_mask_pct}')
         self.training_mask_pct = training_mask_pct
 
-    # def _forward_harmonic_extension(self, h, r, t):
-    #     # Since the relation_shape is more than length 1, the r value is given as a sequence
-    #     # of the representations defined there. You can use tuple unpacking to get them out
-    #     r_h, r_t = r
-
-    #     if h.shape[1] > 1 and t.shape[1] == 1:
-    #         interior = h
-    #         boundary = t
-    #     elif t.shape[1] > 1 and h.shape[1] == 1:
-    #         interior = t
-    #         boundary = h
-    #     else:
-    #         raise ValueError(f'Unknown scenario with shapes {h.shape}, {t.shape}')
-
-    #     # get unique indices across batch dimension
-    #     # a little hacky, but it doesn't appear possible to get indices from `self`
-    #     _, b_idxs = torch.unique(boundary, dim=0, return_inverse=True, sorted=False)
-    #     _, i_idxs = torch.unique(interior, dim=1, return_inverse=True, sorted=False)
-    #     _, r_h_idxs = torch.unique(r_h, dim=0, return_inverse=True, sorted=False)
-    #     _, r_t_idxs = torch.unique(r_t, dim=0, return_inverse=True, sorted=False)
-
-    #     edge_index = torch.cat([b_idxs.unsqueeze(0), i_idxs.unsqueeze(0)], dim=0)
-    #     restriction_maps = torch.cat([r_h.unsqueeze(1), r_t.unsqueeze(1)], dim=1)
-
-    #     print()
-
     def _forward_harmonic_extension(self, boundary, r, interior, to_score):
         # Since the relation_shape is more than length 1, the r value is given as a sequence
         # of the representations defined there. You can use tuple unpacking to get them out
