@@ -4,21 +4,25 @@ import matplotlib.pyplot as plt
 from pykeen.pipeline import pipeline
 from pykeen.evaluation import RankBasedEvaluator
 from pykeen.datasets import Nations, FB15k237, WN18RR
+from sheaf_kg.models.extension_structured_embedding import ExtensionStructuredEmbedding
 from sheaf_kg.regularizers.multisection_regularizers import OrthogonalSectionsRegularizer
 from sheaf_kg.models.multisection_structured_embedding import MultisectionStructuredEmbedding
 from sheaf_kg.models.multisection_trans_e import MultisectionTransE
 
 DATASET = 'Nations'
-MODEL = 'MultisectionStructuredEmbedding'
-NUM_EPOCHS = 25
+# MODEL = 'MultisectionStructuredEmbedding'
+MODEL = 'ExtensionStructuredEmbedding'
+NUM_EPOCHS = 5
 C0_DIM = 50
-NUM_SECTIONS = 5
+C1_DIM = 20
+NUM_SECTIONS = 1
 RANDOM_SEED = 134
 REGULARIZER_WEIGHT = 1
 
 model_map = {
     'MultisectionStructuredEmbedding':MultisectionStructuredEmbedding,
-    'MultisectionTransE':MultisectionTransE
+    'MultisectionTransE':MultisectionTransE,
+    'ExtensionStructuredEmbedding':ExtensionStructuredEmbedding
 }
 
 dataset_map = {
@@ -39,7 +43,7 @@ def find_dataset(dataset):
 
 
 def run(model, dataset, num_epochs, random_seed,
-        embedding_dim, num_sections):
+        embedding_dim, c1_dimension=None, num_sections=None):
 
     dataset_instance = find_dataset(dataset)
     model_class = find_model(model)
@@ -48,17 +52,24 @@ def run(model, dataset, num_epochs, random_seed,
     evaluator = RankBasedEvaluator(
         filtered=True,  # Note: this is True by default; we're just being explicit
     )
+    
+    model_kwargs = {}
+    model_kwargs['C0_dimension'] = embedding_dim
+    if num_sections is not None:
+        model_kwargs['num_sections'] = num_sections
+    if c1_dimension is not None:
+        model_kwargs['C1_dimension'] = c1_dimension 
+    
+    # model_kwargs['training_mask_pct'] = 0.1
 
     result = pipeline(
-        # model=MultisectionSE,
-        # model_kwargs={'C0_dimension':50, 'num_sections':5, 'C1_dimension':25},
         model=model_class,
-        model_kwargs={'C0_dimension':embedding_dim, 'num_sections':num_sections},
+        model_kwargs=model_kwargs,
         regularizer=OrthogonalSectionsRegularizer,
         regularizer_kwargs={'weight':reg_weight},
         dataset=dataset_instance,
         epochs=num_epochs,
-        device='gpu',
+        device='cpu',
         random_seed=random_seed,
         evaluator=evaluator,
     )
@@ -76,7 +87,9 @@ def run(model, dataset, num_epochs, random_seed,
 
     result.plot_losses()
     plt.savefig(f'data/{model}_losses_{reg_weight}.png')
-    print(ev_results.to_df())
+    ev_df = ev_results.to_df()
+    print(ev_df)
+    ev_df.to_csv(f'data/{model}_losses_{reg_weight}.csv')
 
 
 if __name__ == '__main__':
@@ -90,6 +103,8 @@ if __name__ == '__main__':
                         help='number of training epochs')
     training_args.add_argument('--embedding-dim', type=int, default=C0_DIM,
                         help='entity embedding dimension')
+    training_args.add_argument('--c1-dimension', type=int, default=C1_DIM,
+                        help='entity embedding dimension')
     training_args.add_argument('--num-sections', type=int, default=NUM_SECTIONS,
                         help='number of simultaneous sections to learn')
     training_args.add_argument('--random-seed', type=int, default=RANDOM_SEED,
@@ -101,6 +116,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     run(args.model, args.dataset, args.num_epochs, args.random_seed,
-        args.embedding_dim, args.num_sections)
+        args.embedding_dim, c1_dimension=args.c1_dimension, num_sections=args.num_sections)
 
 

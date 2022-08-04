@@ -62,8 +62,10 @@ def compute_costs(L,source_vertices,target_vertices,xS,xT,dv):
     LST = L[np.ix_(Sidx,Tidx)]
     LTT = L[np.ix_(Tidx,Tidx)]
 
+    xT_r = torch.transpose(xT.repeat((xS.shape[0]//dv,1,1,1)), 1,2).reshape(-1, xT.shape[1])
+
     const = xS.T @ LSS @ xS
-    lin = xS.T @ LST @ xT
-    quad = torch.sum(xT * (LTT @ xT), axis=0)
+    lin = xS.T @ LST @ xT_r
+    quad = torch.sum(xT_r * (LTT @ xT_r), axis=0)
 
     return const + lin + quad
