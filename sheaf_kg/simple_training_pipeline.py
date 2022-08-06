@@ -8,10 +8,12 @@ from sheaf_kg.models.extension_structured_embedding import ExtensionStructuredEm
 from sheaf_kg.regularizers.multisection_regularizers import OrthogonalSectionsRegularizer
 from sheaf_kg.models.multisection_structured_embedding import MultisectionStructuredEmbedding
 from sheaf_kg.models.multisection_trans_e import MultisectionTransE
+from sheaf_kg.triples.triples_factory import ComplexTriplesFactory
 
 DATASET = 'Nations'
 # MODEL = 'MultisectionStructuredEmbedding'
 MODEL = 'ExtensionStructuredEmbedding'
+SAMPLER = 'schlichtkrull'
 NUM_EPOCHS = 5
 C0_DIM = 50
 C1_DIM = 20
@@ -39,13 +41,41 @@ def find_model(model):
 def find_dataset(dataset):
     if dataset in dataset_map:
         return dataset_map[dataset]
-    raise ValueError(f'dataset {dataset} not known')
+    raise ValueError(f'dataset {dataset} not known') 
 
+def get_factories(dataset):
+
+    triples_factory = ComplexTriplesFactory
+
+    dstf = find_dataset(dataset)
+    train = triples_factory(
+        mapped_triples=dstf.training.mapped_triples,
+        entity_to_id=dstf.training.entity_to_id,
+        relation_to_id=dstf.training.relation_to_id,
+        create_inverse_triples=dstf.training.create_inverse_triples,
+        metadata=dstf.training.metadata
+    )
+    validate = triples_factory(
+        mapped_triples=dstf.validation.mapped_triples,
+        entity_to_id=dstf.validation.entity_to_id,
+        relation_to_id=dstf.validation.relation_to_id,
+        create_inverse_triples=dstf.validation.create_inverse_triples,
+        metadata=dstf.validation.metadata
+    )
+    test = triples_factory(
+        mapped_triples=dstf.testing.mapped_triples,
+        entity_to_id=dstf.testing.entity_to_id,
+        relation_to_id=dstf.testing.relation_to_id,
+        create_inverse_triples=dstf.testing.create_inverse_triples,
+        metadata=dstf.testing.metadata
+    )
+    return train, validate, test
 
 def run(model, dataset, num_epochs, random_seed,
-        embedding_dim, c1_dimension=None, num_sections=None):
+        embedding_dim, c1_dimension=None, num_sections=None,
+        sampler=None):
 
-    dataset_instance = find_dataset(dataset)
+    train_tf, validate_tf, test_tf = get_factories(dataset)
     model_class = find_model(model)
     reg_weight = REGULARIZER_WEIGHT
         
@@ -67,7 +97,10 @@ def run(model, dataset, num_epochs, random_seed,
         model_kwargs=model_kwargs,
         regularizer=OrthogonalSectionsRegularizer,
         regularizer_kwargs={'weight':reg_weight},
-        dataset=dataset_instance,
+        training=train_tf,
+        testing=test_tf,
+        validation=validate_tf,
+        training_kwargs={'sampler':sampler},
         epochs=num_epochs,
         device='cpu',
         random_seed=random_seed,
@@ -78,10 +111,10 @@ def run(model, dataset, num_epochs, random_seed,
     # but also filter on validation triples
     ev_results = evaluator.evaluate(
         model=result.model,
-        mapped_triples=dataset_instance.testing.mapped_triples,
+        mapped_triples=test_tf.mapped_triples,
         additional_filter_triples=[
-            dataset_instance.training.mapped_triples,
-            dataset_instance.validation.mapped_triples,
+            train_tf.mapped_triples,
+            validate_tf.mapped_triples,
         ]
     )
 
@@ -112,10 +145,14 @@ if __name__ == '__main__':
     training_args.add_argument('--model', type=str, required=False, default=MODEL,
                         choices=['MultisectionStructuredEmbedding', 'MultisectionTransE'],
                         help='name of model to train')
+    training_args.add_argument('--sampler', type=str, required=False, default=SAMPLER,
+                        choices=['complex', 'schlichtkrull' ],
+                        help='name of triples factory to use')
 
     args = parser.parse_args()
 
     run(args.model, args.dataset, args.num_epochs, args.random_seed,
-        args.embedding_dim, c1_dimension=args.c1_dimension, num_sections=args.num_sections)
+        args.embedding_dim, c1_dimension=args.c1_dimension, num_sections=args.num_sections,
+        sampler=args.sampler)
 
 
