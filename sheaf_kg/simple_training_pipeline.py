@@ -146,7 +146,7 @@ if __name__ == '__main__':
                         choices=['MultisectionStructuredEmbedding', 'MultisectionTransE'],
                         help='name of model to train')
     training_args.add_argument('--sampler', type=str, required=False, default=SAMPLER,
-                        choices=['complex', 'schlichtkrull' ],
+                        choices=['linear', 'complex', 'schlichtkrull'],
                         help='name of triples factory to use')
 
     args = parser.parse_args()
