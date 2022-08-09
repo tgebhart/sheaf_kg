@@ -86,17 +86,19 @@ class ExtensionInteraction(MultisectionStructuredEmbeddingInteraction):
             # boundary indices
             b_idxs = edge_index[:,i]
             # interior indices which are not equal to either of the boundary indices
-            i_idxs = edge_index[:,(edge_index[0,:] != b_idxs[0]) & (edge_index[1,:] != b_idxs[1])]
+            idxs = torch.unique(edge_index.flatten())
+            i_idxs = idxs[(idxs != b_idxs[0]) & (idxs != b_idxs[1])]
+            # i_idxs = edge_index[:,(edge_index[0,:] != b_idxs[0]) & (edge_index[1,:] != b_idxs[1])]
             # restriction maps of the above relations 
-            i_rmaps = restriction_maps[(edge_index[0,:] != b_idxs[0]) & (edge_index[1,:] != b_idxs[1]),:,:,:]
+            # i_rmaps = restriction_maps[(edge_index[0,:] != b_idxs[0]) & (edge_index[1,:] != b_idxs[1]),:,:,:]
 
             # add the head and tail entities of batch triplet i
-            filtered_edge_index = torch.cat([b_idxs.unsqueeze(1), i_idxs], dim=1)
+            # filtered_edge_index = torch.cat([b_idxs.unsqueeze(1), i_idxs], dim=1)
             # add the restriction maps for triplet i
-            filtered_restriction_maps = torch.cat([restriction_maps[i].unsqueeze(0), i_rmaps], dim=0)
+            # filtered_restriction_maps = torch.cat([restriction_maps[i].unsqueeze(0), i_rmaps], dim=0)
 
             # take the schur complement over the interior vertices
-            Lschur = the.Kron_reduction(filtered_edge_index, filtered_restriction_maps, b_idxs, i_idxs.flatten())
+            Lschur = the.Kron_reduction(edge_index, restriction_maps, b_idxs, i_idxs.flatten())
             # reshape the entities that should be scored so they are sized (num_targets*dv, num_entities_to_score)
             xT = torch.transpose(to_score.squeeze(0).squeeze(-1), 0,1)
             # score all the entities over our schur complement Laplacian
