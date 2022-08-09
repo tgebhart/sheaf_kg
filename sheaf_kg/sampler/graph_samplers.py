@@ -24,37 +24,55 @@ class LinearSubGraphSLCWAInstances(BaseBatchedSLCWAInstances):
     def subgraph_sample(self) -> List[int]:
         """sample a single linear chain with disjoint vertices and self.batch_size edges"""
         node_weights = self.degrees.detach().clone()
-        edge_picked = torch.zeros(self.mapped_triples.shape[0], dtype=torch.bool)
-        node_picked = torch.zeros(self.degrees.shape[0], dtype=torch.bool)
+        # edge_picked = torch.zeros(self.mapped_triples.shape[0], dtype=torch.bool)
+        # node_picked = torch.zeros(self.degrees.shape[0], dtype=torch.bool)
 
-        result = []
-        # choose a random vertex to start
-        current_head = torch.randint(node_picked.numel(), size=tuple())
-        node_picked[current_head] = True
-        for _ in range(self.batch_size):
-            # sample the initial node
+        redo = True
 
-            start = self.offset[current_head]
-            current_head_degree = self.degrees[current_head].item()
-            # probably need to have something to do when the degree is zero
-            # or backtracking when there just isn't a path of sufficient length?
-            stop = start + current_head_degree
-            adj_list = self.neighbors[start:stop, :]
+        while redo:
+            edge_picked = torch.zeros(self.mapped_triples.shape[0], dtype=torch.bool)
+            node_picked = torch.zeros(self.degrees.shape[0], dtype=torch.bool)
+            redo = False
+            result = []
+            # choose a random vertex to start
+            current_head = torch.randint(node_picked.numel(), size=tuple())
 
-            chosen_edge_index = torch.randint(current_head_degree, size=tuple())
-            chosen_edge = adj_list[chosen_edge_index]
-            edge_number = chosen_edge[0]
+            while node_weights[current_head] == 0:
+                current_head = torch.randint(node_picked.numel(), size=tuple())
 
-            # find an edge which has not been picked and whose tail vertex also has not been picked
-            while edge_picked[edge_number] and node_picked[chosen_edge[1]]:
+            node_picked[current_head] = True
+            for _ in range(self.batch_size):
+                start = self.offset[current_head]
+                current_head_degree = self.degrees[current_head].item()
+                if current_head_degree == 0:
+                    redo = True
+                    # start over
+                    break
+
+                stop = start + current_head_degree
+                adj_list = self.neighbors[start:stop, :]
+
+                # check that there is at least one valid edge to pick.
+                invalid_edges = edge_picked[adj_list[:,0]] | node_picked[adj_list[:,1]]
+                # probably node_picked is sufficient, huh?
+                if torch.all(invalid_edges):
+                    redo = True
+                    break
+
                 chosen_edge_index = torch.randint(current_head_degree, size=tuple())
                 chosen_edge = adj_list[chosen_edge_index]
                 edge_number = chosen_edge[0]
-            result.append(edge_number.item())
+                # find an edge which has not been picked and whose tail vertex also has not been picked
+                while invalid_edges[chosen_edge_index]:
+                    chosen_edge_index = torch.randint(current_head_degree, size=tuple())
+                    chosen_edge = adj_list[chosen_edge_index]
+                    edge_number = chosen_edge[0]
 
-            edge_picked[edge_number] = True
+                result.append(edge_number.item())
 
-            current_head = chosen_edge[1]
+                edge_picked[edge_number] = True
+                current_head = chosen_edge[1]
+                node_picked[current_head] = True
 
         return result
 
