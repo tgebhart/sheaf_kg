@@ -7,6 +7,8 @@ from pykeen.typing import MappedTriples, Mapping, EntityMapping, RelationMapping
 from pykeen.triples.triples_factory import TriplesFactory
 from pykeen.triples.instances import SubGraphSLCWAInstances, BatchedSLCWAInstances
 
+from sheaf_kg.sampler.graph_samplers import LinearSubGraphSLCWAInstances
+
 class ComplexTriplesFactory(TriplesFactory):
     """Create instances from ID-based triples."""
 
@@ -52,6 +54,8 @@ class ComplexTriplesFactory(TriplesFactory):
         print(f'GOT SAMPLER {sampler}')
         if sampler == 'complex':
             raise ValueError('not yet implemented')
+        if sampler == 'linear':
+            cls = LinearSubGraphSLCWAInstances
         elif sampler == 'schlichtkrull':
             cls = SubGraphSLCWAInstances
         else:
