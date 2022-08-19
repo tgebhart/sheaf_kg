@@ -3,3 +3,5 @@
 Models are written to be compatible with the
 [Pykeen package](https://pykeen.readthedocs.io/en/stable/).
 
+
+Download BetaE data from (here)[http://snap.stanford.edu/betae/KG_data.zip]
