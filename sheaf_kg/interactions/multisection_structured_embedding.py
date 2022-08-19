@@ -167,7 +167,7 @@ class ExtensionInteraction(MultisectionStructuredEmbeddingInteraction):
             dim=slice_dim,
         )
 
-def score_t(
+    def score_t(
         self,
         h: HeadRepresentation,
         r: RelationRepresentation,
@@ -209,5 +209,32 @@ def score_t(
             ],
             dim=slice_dim,
         )
+
+
+class BetaeExtensionInteraction(MultisectionStructuredEmbeddingInteraction):
+
+    def __init__(self, p: int = 2, training_mask_pct: float = 0):
+        super().__init__(p=p)
+        if training_mask_pct > 1 or training_mask_pct < 0:
+            raise ValueError(f'training mask percentage must be between 0 and 1, got {training_mask_pct}')
+        self.training_mask_pct = training_mask_pct
+
+    def forward(self, h,r,t):
+        if self.training:
+            return super().forward(h,r,t)
+        return super().forward(h,r,t)
+
+    def score_schur(self, edge_index, restriction_maps, 
+                        boundary_vertices, interior_vertices, 
+                        source_vertices, target_vertices, 
+                        xS, xT, dv):
+        LSchur = the.Kron_reduction(edge_index, restriction_maps, boundary_vertices, interior_vertices)
+        return the.compute_costs(LSchur, source_vertices, target_vertices, xS, xT, dv)
+
+    def score_intersect(self, edge_index, restriction_maps, 
+                        source_vertices, target_vertices, 
+                        xS, xT, dv):
+        L = the.Laplacian(edge_index, restriction_maps)
+        return the.compute_costs(L, source_vertices, target_vertices, xS, xT, dv)
         
 

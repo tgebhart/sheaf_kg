@@ -9,7 +9,7 @@ def coboundary(edge_index,restriction_maps):
     # TODO: is that assumption right for pykeen?
     de = restriction_maps.shape[2]
     dv = restriction_maps.shape[3]
-    d = torch.zeros((ne*de,nv*dv))
+    d = torch.zeros((ne*de,nv*dv), device=restriction_maps.device)
     for e in range(ne):
         h = edge_index[0,e]
         t = edge_index[1,e]
@@ -64,7 +64,7 @@ def compute_costs(L,source_vertices,target_vertices,xS,xT,dv):
     LTT = L[np.ix_(Tidx,Tidx)]
 
     const = torch.sum(xS * LSS @ xS, dim=0) # for ranking purposes this isn't really necessary
-    lin =  2 * torch.sum(xS * LST @ xT, dim=0) # shouldn't this be multiplied by 2?
+    lin =  2 * torch.sum(xS * (LST @ xT), dim=0) # shouldn't this be multiplied by 2?
     quad = torch.sum(xT * (LTT @ xT), dim=0)
 
     return const + lin + quad

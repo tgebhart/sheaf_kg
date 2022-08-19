@@ -51,7 +51,6 @@ class ExtensionStructuredEmbedding(ERModel):
         **kwargs,
     ) -> None:
         r"""Initialize SE.
-
         :param embedding_dim: The entity embedding dimension $d$. Is usually $d \in [50, 300]$.
         :param scoring_fct_norm: The $l_p$ norm. Usually 1 for SE.
         :param entity_initializer: Entity initializer function. Defaults to :func:`pykeen.nn.init.xavier_uniform_`
@@ -101,7 +100,6 @@ class ExtensionStructuredEmbedding(ERModel):
     ) -> torch.FloatTensor:
         """
         Predict scores for the given target.
-
         :param hrt_batch: shape: (batch_size, 3) or (batch_size, 2)
             the full batch, or the relevant part of it
         :param target:
@@ -112,10 +110,8 @@ class ExtensionStructuredEmbedding(ERModel):
             restrict prediction to only those ids
         :param kwargs:
             additional keyword-based parameters passed to the specific target prediction method.
-
         :raises ValueError:
             if the target is invalid
-
         :return: shape: (batch_size, num)
             the scores
         """
