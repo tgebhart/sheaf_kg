@@ -59,7 +59,7 @@ def tensorize(q, query_structure):
     return t
     
 def generate_mapped_triples(query_loc, answer_loc, query_structures=['1p','2p','3p','2i','3i','ip','pi'],
-                            random_sample=False):
+                            random_sample=False, filter_fun=None, remap_fun=None):
     with open(query_loc, 'rb') as f:
         queries = pickle.load(f)
     with open(answer_loc, 'rb') as f:
@@ -67,20 +67,31 @@ def generate_mapped_triples(query_loc, answer_loc, query_structures=['1p','2p','
 
     mapped_triples = {}
     for query_structure in query_structures:
-        print(f'running query structure {query_structure}')
+        print(f'loading query structure {query_structure}')
         qs = queries[name_query_dict[query_structure]]
 
+        num_filtered = 0
         qlist = []
         for q in qs:
             qtens = tensorize(q, query_structure)
-            ans = answers[q]
+            ans = list(answers[q])
+            if remap_fun is not None:
+                qtens, ans = remap_fun(qtens, ans)
+            if filter_fun is not None:
+                if not filter_fun(qtens, ans):
+                    num_filtered += 1
+                    continue
             if random_sample and len(ans) > 0:
-                a = random.choice(tuple(ans))
-                qtens['target'] = torch.tensor([a])
+                a = random.choice(ans)
+                qtens['target'] = torch.LongTensor([a])
+                qtens['others'] = torch.LongTensor([o for o in ans if o != a])
                 qlist.append(qtens)
             else:
-                for a in ans:
-                    qtens['target'] = torch.tensor([a])
-                    qlist.append(qtens)
+                for index, a in enumerate(ans):
+                    others = ans[:index] + ans[index+1:]
+                    qtens['target'] = torch.LongTensor([a])
+                    qtens['others'] = torch.LongTensor(others)
+                    qlist.append(qtens.copy())
+        print(f'filtered {num_filtered} queries of {len(qs)} possible for query {query_structure}')
         mapped_triples[query_structure] = qlist
     return mapped_triples

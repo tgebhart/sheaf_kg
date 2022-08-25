@@ -61,6 +61,7 @@ class ComplexTriplesFactory(TriplesFactory):
         else:
             cls = BatchedSLCWAInstances
         print(f'SET SAMPLER {cls}')
+        print('KWARGS', kwargs)
         if "shuffle" in kwargs:
             if kwargs.pop("shuffle"):
                 warnings.warn("Training instances are always shuffled.", DeprecationWarning)

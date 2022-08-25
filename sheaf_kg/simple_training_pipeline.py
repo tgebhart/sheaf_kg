@@ -7,29 +7,31 @@ from pykeen.datasets import Nations, FB15k237, WN18RR
 from sheaf_kg.models.extension_structured_embedding import ExtensionStructuredEmbedding
 from sheaf_kg.regularizers.multisection_regularizers import OrthogonalSectionsRegularizer
 from sheaf_kg.models.multisection_structured_embedding import MultisectionStructuredEmbedding
+from sheaf_kg.models.betae_extension_structured_embedding import BetaeExtensionStructuredEmbedding
 from sheaf_kg.models.multisection_trans_e import MultisectionTransE
 from sheaf_kg.triples.triples_factory import ComplexTriplesFactory
 
 DATASET = 'Nations'
-# MODEL = 'MultisectionStructuredEmbedding'
-MODEL = 'ExtensionStructuredEmbedding'
+MODEL = 'MultisectionStructuredEmbedding'
 SAMPLER = 'schlichtkrull'
 NUM_EPOCHS = 5
-C0_DIM = 50
-C1_DIM = 20
+C0_DIM = 16
+C1_DIM = 16
+BATCH_SIZE = 32
 NUM_SECTIONS = 1
 RANDOM_SEED = 134
-REGULARIZER_WEIGHT = 1
+REGULARIZER_WEIGHT = 0
 
 model_map = {
     'MultisectionStructuredEmbedding':MultisectionStructuredEmbedding,
     'MultisectionTransE':MultisectionTransE,
-    'ExtensionStructuredEmbedding':ExtensionStructuredEmbedding
+    'ExtensionStructuredEmbedding':ExtensionStructuredEmbedding,
+    'BetaeExtensionStructuredEmbedding':BetaeExtensionStructuredEmbedding
 }
 
 dataset_map = {
     'Nations': Nations(),
-    'FB15k-237': FB15k237(),
+    'FB15k-237': FB15k237(create_inverse_triples=True),
     'WN18RR': WN18RR()
 }
 
@@ -57,15 +59,15 @@ def get_factories(dataset):
     )
     validate = triples_factory(
         mapped_triples=dstf.validation.mapped_triples,
-        entity_to_id=dstf.validation.entity_to_id,
-        relation_to_id=dstf.validation.relation_to_id,
+        entity_to_id=dstf.training.entity_to_id,
+        relation_to_id=dstf.training.relation_to_id,
         create_inverse_triples=dstf.validation.create_inverse_triples,
         metadata=dstf.validation.metadata
     )
     test = triples_factory(
         mapped_triples=dstf.testing.mapped_triples,
-        entity_to_id=dstf.testing.entity_to_id,
-        relation_to_id=dstf.testing.relation_to_id,
+        entity_to_id=dstf.training.entity_to_id,
+        relation_to_id=dstf.training.relation_to_id,
         create_inverse_triples=dstf.testing.create_inverse_triples,
         metadata=dstf.testing.metadata
     )
@@ -73,7 +75,7 @@ def get_factories(dataset):
 
 def run(model, dataset, num_epochs, random_seed,
         embedding_dim, c1_dimension=None, num_sections=None,
-        sampler=None):
+        sampler=None, batch_size=BATCH_SIZE):
 
     train_tf, validate_tf, test_tf = get_factories(dataset)
     model_class = find_model(model)
@@ -90,19 +92,16 @@ def run(model, dataset, num_epochs, random_seed,
     if c1_dimension is not None:
         model_kwargs['C1_dimension'] = c1_dimension 
     
-    # model_kwargs['training_mask_pct'] = 0.1
-
     result = pipeline(
         model=model_class,
         model_kwargs=model_kwargs,
         regularizer=OrthogonalSectionsRegularizer,
-        regularizer_kwargs={'weight':reg_weight},
         training=train_tf,
         testing=test_tf,
         validation=validate_tf,
-        training_kwargs={'sampler':sampler},
+        training_kwargs={'batch_size':batch_size},
         epochs=num_epochs,
-        device='cpu',
+        device='gpu',
         random_seed=random_seed,
         evaluator=evaluator,
     )
@@ -118,11 +117,9 @@ def run(model, dataset, num_epochs, random_seed,
         ]
     )
 
-    result.plot_losses()
-    plt.savefig(f'data/{model}_losses_{reg_weight}.png')
     ev_df = ev_results.to_df()
     print(ev_df)
-    ev_df.to_csv(f'data/{model}_losses_{reg_weight}.csv')
+    ev_df.to_csv(f'data/{dataset}/{model}_{embedding_dim}C0_{c1_dimension}C1_{num_sections}sec_{reg_weight}reg_{num_epochs}epochs_inverse.csv')
 
 
 if __name__ == '__main__':
@@ -142,6 +139,8 @@ if __name__ == '__main__':
                         help='number of simultaneous sections to learn')
     training_args.add_argument('--random-seed', type=int, default=RANDOM_SEED,
                         help='random seed')
+    training_args.add_argument('--batch-size', type=int, default=BATCH_SIZE,
+                        help='training batch size')
     training_args.add_argument('--model', type=str, required=False, default=MODEL,
                         choices=['MultisectionStructuredEmbedding', 'MultisectionTransE'],
                         help='name of model to train')
@@ -153,6 +152,6 @@ if __name__ == '__main__':
 
     run(args.model, args.dataset, args.num_epochs, args.random_seed,
         args.embedding_dim, c1_dimension=args.c1_dimension, num_sections=args.num_sections,
-        sampler=args.sampler)
+        sampler=args.sampler, batch_size=args.batch_size)
 
 

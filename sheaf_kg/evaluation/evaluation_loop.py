@@ -64,15 +64,14 @@ def _evaluate_batch(
 
     true_idxs = [b['target'] for b in batch]
 
+    true_scores = scores[torch.arange(0, len(batch)), true_idxs]
+    # the rank-based evaluators needs the true scores with trailing 1-dim
+    true_scores = true_scores.unsqueeze(dim=-1)
+
     if evaluator.filtered:
-        # Select scores of true
-        true_scores = scores[torch.arange(0, len(batch)), true_idxs]
-        # the rank-based evaluators needs the true scores with trailing 1-dim
-        true_scores = true_scores.unsqueeze(dim=-1)
-    else:
-        true_scores = None
-
-
+        for b in range(len(batch)):
+            scores[b, batch[b]['others']] = float('nan')
+    
     positive_mask = None
 
     # Restrict to entities of interest
@@ -80,7 +79,7 @@ def _evaluate_batch(
         scores = scores[:, restrict_entities_to]
         if positive_mask is not None:
             positive_mask = positive_mask[:, restrict_entities_to]
-
+    
     # process scores
     evaluator.process_scores_(
         hrt_batch=batch,
@@ -173,7 +172,6 @@ def evaluate(
     :return:
         the evaluation results
     """
-    print('inside sheaf_kg evaluation loop')
     
     # Send to device
     if device is not None:

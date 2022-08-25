@@ -2,7 +2,7 @@
 
 """Implementation of structured model (SE)."""
 
-from typing import Any, Callable, ClassVar, Mapping, Optional
+from typing import Any, Callable, ClassVar, Mapping, Optional, Literal
 
 from class_resolver import Hint, HintOrType, OptionalKwargs
 import torch
@@ -17,12 +17,17 @@ from pykeen.regularizers import Regularizer
 from pykeen.typing import LABEL_HEAD, LABEL_RELATION, LABEL_TAIL, \
                         MappedTriples, Target, InductiveMode
 
-from sheaf_kg.interactions.multisection_structured_embedding import BetaeExtensionInteraction
+from sheaf_kg.interactions.multisection_trans_e import BetaeExtensionInteraction
 from sheaf_kg.regularizers.multisection_regularizers import OrthogonalSectionsRegularizer
 from sheaf_kg.representations.parameterized_embedding import ParameterizedEmbedding
 from sheaf_kg.models.model_utils import prepare_query_for_prediction
 
-class BetaeExtensionStructuredEmbedding(ERModel):
+__all__ = [
+    "BetaeExtensionTranslational",
+    "BetaeExtensionTransE"
+]
+
+class BetaeExtensionTranslational(ERModel):
 
     #: The default strategy for optimizing the model's hyper-parameters
     hpo_default: ClassVar[Mapping[str, Any]] = dict(
@@ -36,37 +41,45 @@ class BetaeExtensionStructuredEmbedding(ERModel):
         C0_dimension: int = 50,
         C1_dimension: int = 20,
         num_sections: int = 1,
-        scoring_fct_norm: int = 2,
+        scoring_fct_norm: int = 1,
         entity_initializer: Hint[Initializer] = xavier_uniform_,
         entity_constrainer: Hint[Constrainer] = functional.normalize,
+        relation_initializer: Hint[Initializer] = xavier_uniform_norm_,
+        relation_constrainer: Hint[Constrainer] = None,
+        restriction_initializer: Hint[Initializer] = xavier_uniform_norm_,
+        restriction_parametrization: Optional[Callable] = None,
+        restriction_trainable: bool = True,
         regularizer: HintOrType[Regularizer] = OrthogonalSectionsRegularizer,
         regularizer_kwargs: OptionalKwargs = None,
-        entity_constrainer_kwargs: Optional[Mapping[str, Any]] = None,
-        relation_initializer: Hint[Initializer] = xavier_uniform_norm_,
-        relation_parametrization: Optional[Callable] = None,
         **kwargs,
     ) -> None:
-        r"""Initialize SE.
+        r"""Initialize TransE.
 
         :param embedding_dim: The entity embedding dimension $d$. Is usually $d \in [50, 300]$.
-        :param scoring_fct_norm: The $l_p$ norm. Usually 1 for SE.
-        :param entity_initializer: Entity initializer function. Defaults to :func:`pykeen.nn.init.xavier_uniform_`
-        :param entity_constrainer: Entity constrainer function. Defaults to :func:`torch.nn.functional.normalize`
-        :param entity_constrainer_kwargs: Keyword arguments to be used when calling the entity constrainer
-        :param relation_initializer: Relation initializer function. Defaults to
-            :func:`pykeen.nn.init.xavier_uniform_norm_`
+        :param scoring_fct_norm: The :math:`l_p` norm applied in the interaction function. Is usually ``1`` or ``2.``.
+        :param entity_initializer: Entity initializer function.
+        :param entity_constrainer: Entity constrainer function.
+        :param relation_initializer: Relation initializer function.
+        :param relation_constrainer: Relation constrainer function. Defaults to none.
         :param kwargs:
-            Remaining keyword arguments to forward to :class:`pykeen.models.EntityEmbeddingModel`
+            Remaining keyword arguments to forward to :meth:`pykeen.models.ERModel.__init__`
+        :param regularizer:
+            a regularizer, or a hint thereof. Used for both, entity and relation representations;
+            directly use :class:`ERModel` if you need more flexibility
+        :param regularizer_kwargs:
+            keyword-based parameters for the regularizer
+
+        .. seealso::
+
+           - OpenKE `implementation of TransE <https://github.com/thunlp/OpenKE/blob/OpenKE-PyTorch/models/TransE.py>`_
         """
         super().__init__(
-            interaction=BetaeExtensionInteraction(
-                p=scoring_fct_norm
-            ),
+            interaction=BetaeExtensionInteraction,
+            interaction_kwargs=dict(p=scoring_fct_norm),
             entity_representations_kwargs=dict(
                 shape=(C0_dimension,num_sections),
                 initializer=entity_initializer,
                 constrainer=entity_constrainer,
-                constrainer_kwargs=entity_constrainer_kwargs,
                 regularizer=regularizer,
                 regularizer_kwargs=regularizer_kwargs,
             ),
@@ -74,13 +87,22 @@ class BetaeExtensionStructuredEmbedding(ERModel):
             relation_representations_kwargs=[
                 dict(
                     shape=(C1_dimension, C0_dimension),
-                    initializer=relation_initializer,
-                    parametrization=relation_parametrization,
+                    initializer=restriction_initializer,
+                    parametrization=restriction_parametrization,
+                    trainable=restriction_trainable
                 ),
                 dict(
                     shape=(C1_dimension, C0_dimension),
+                    initializer=restriction_initializer,
+                    parametrization=restriction_parametrization,
+                    trainable=restriction_trainable
+                ),
+                dict(
+                    shape=(C1_dimension,num_sections),
                     initializer=relation_initializer,
-                    parametrization=relation_parametrization,
+                    constrainer=relation_constrainer,
+                    regularizer=regularizer,
+                    regularizer_kwargs=regularizer_kwargs,
                 ),
             ],
             **kwargs,
@@ -211,19 +233,19 @@ class BetaeExtensionStructuredEmbedding(ERModel):
             # r[0] will be of size (nbatch, 2, c0_dim) where the second dimension records the number of 
             # relations in the path. r[1] will be the same shape but will contain the tail restriction maps.
             h, r, t = self._get_representations(h=hr_batch[..., 0], r=hr_batch[..., 1:], t=tails, mode=mode)
-            restriction_maps = torch.cat([tr.unsqueeze(2) for tr in r], dim=2)
-            
-            # move everything to proper device
-            restriction_maps = restriction_maps.to(self.device)
-            h = h.to(self.device)
-            t = t.to(self.device)
+            restriction_maps = torch.cat([tr.unsqueeze(2) for tr in r[:2]], dim=2)
 
             nbatch = restriction_maps.shape[0]
+            # move everything to proper device
+            restriction_maps = restriction_maps.to(self.device)
+            h = h.to(self.device).reshape(nbatch, -1, self.num_sections)
+            t = t.to(self.device)
+            b = r[2].to(self.device).reshape(nbatch, -1, self.num_sections)
             
             scores = self.interaction.score_schur_batched(edge_index, restriction_maps, 
                                                 boundary_vertices, interior_vertices, 
                                                 source_vertices, target_vertices, 
-                                                h.reshape(nbatch, -1, self.num_sections), t, t.shape[-2])
+                                                h, t, b, t.shape[-2])
             return -torch.sum(scores, dim=(-1))
 
         if query_structure == '3p':
@@ -236,19 +258,20 @@ class BetaeExtensionStructuredEmbedding(ERModel):
             # r[0] will be of size (nbatch, 2, c0_dim) where the second dimension records the number of 
             # relations in the path. r[1] will be the same shape but will contain the tail restriction maps.
             h, r, t = self._get_representations(h=hr_batch[..., 0], r=hr_batch[..., 1:], t=tails, mode=mode)
-            restriction_maps = torch.cat([tr.unsqueeze(2) for tr in r], dim=2)
+            restriction_maps = torch.cat([tr.unsqueeze(2) for tr in r[:2]], dim=2)
+
+            nbatch = restriction_maps.shape[0]
 
             # move everything to proper device
             restriction_maps = restriction_maps.to(self.device)
-            h = h.to(self.device)
+            h = h.to(self.device).reshape(nbatch, -1, self.num_sections)
             t = t.to(self.device)
-
-            nbatch = restriction_maps.shape[0]
+            b = r[2].to(self.device).reshape(nbatch, -1, self.num_sections)
             
             scores = self.interaction.score_schur_batched(edge_index, restriction_maps, 
                                                 boundary_vertices, interior_vertices, 
                                                 source_vertices, target_vertices, 
-                                                h.reshape(nbatch, -1, self.num_sections), t, t.shape[-2])
+                                                h, t, b, t.shape[-2])
             return -torch.sum(scores, dim=(-1))
 
         if query_structure == '2i':
@@ -259,18 +282,19 @@ class BetaeExtensionStructuredEmbedding(ERModel):
 
             
             h, r, t = self._get_representations(h=hr_batch[:, 0, :], r=hr_batch[:, 1, :], t=tails, mode=mode)
-            restriction_maps = torch.cat([tr.unsqueeze(2) for tr in r], dim=2)
+            restriction_maps = torch.cat([tr.unsqueeze(2) for tr in r[:2]], dim=2)
+
+            nbatch = restriction_maps.shape[0]
 
             # move everything to proper device
             restriction_maps = restriction_maps.to(self.device)
-            h = h.to(self.device)
+            h = h.to(self.device).reshape(nbatch, -1, self.num_sections)
             t = t.to(self.device)
-
-            nbatch = restriction_maps.shape[0]
+            b = r[2].to(self.device).reshape(nbatch, -1, self.num_sections)
             
             scores = self.interaction.score_intersect_batched(edge_index, restriction_maps, 
                                                 source_vertices, target_vertices, 
-                                                h.reshape(nbatch, -1, self.num_sections), t, t.shape[-2])
+                                                h, t, b, t.shape[-2])
             return -torch.sum(scores, dim=(-1))
 
         if query_structure == '3i':
@@ -280,18 +304,19 @@ class BetaeExtensionStructuredEmbedding(ERModel):
             target_vertices = torch.LongTensor([3])
             
             h, r, t = self._get_representations(h=hr_batch[:, 0, :], r=hr_batch[:, 1, :], t=tails, mode=mode)
-            restriction_maps = torch.cat([tr.unsqueeze(2) for tr in r], dim=2)
-
-            # move everything to proper device
-            restriction_maps = restriction_maps.to(self.device)
-            h = h.to(self.device)
-            t = t.to(self.device)
+            restriction_maps = torch.cat([tr.unsqueeze(2) for tr in r[:2]], dim=2)
 
             nbatch = restriction_maps.shape[0]
 
+            # move everything to proper device
+            restriction_maps = restriction_maps.to(self.device)
+            h = h.to(self.device).reshape(nbatch, -1, self.num_sections)
+            t = t.to(self.device)
+            b = r[2].to(self.device).reshape(nbatch, -1, self.num_sections)
+
             scores = self.interaction.score_intersect_batched(edge_index, restriction_maps, 
                                                 source_vertices, target_vertices, 
-                                                h.reshape(nbatch, -1, self.num_sections), t, t.shape[-2])
+                                                h, t, b, t.shape[-2])
             return -torch.sum(scores, dim=(-1))
         
         if query_structure == 'pi':
@@ -308,17 +333,19 @@ class BetaeExtensionStructuredEmbedding(ERModel):
             sources = torch.cat([b['sources'].unsqueeze(0) for b in hr_batch], axis=0)
             relations = torch.cat([b['relations'].unsqueeze(0) for b in hr_batch], axis=0)
             h, r, _ = self._get_representations(h=sources, r=relations, t=dummy_idx, mode=mode)
-            restriction_maps = torch.cat([tr.unsqueeze(2) for tr in r], dim=2)
+            restriction_maps = torch.cat([tr.unsqueeze(2) for tr in r[:2]], dim=2)
+            
+            nbatch = restriction_maps.shape[0]
+
             # move everything to proper device
             restriction_maps = restriction_maps.to(self.device)
-            h = h.to(self.device)
-
-            nbatch = restriction_maps.shape[0]
+            h = h.to(self.device).reshape(nbatch, -1, self.num_sections)
+            b = r[2].to(self.device).reshape(nbatch, -1, self.num_sections)
             
             scores = self.interaction.score_schur_batched(edge_index, restriction_maps, 
                                                 boundary_vertices, interior_vertices, 
                                                 source_vertices, target_vertices, 
-                                                h.reshape(nbatch, -1, self.num_sections), t, t.shape[-2])
+                                                h, t, b, t.shape[-2])
             return -torch.sum(scores, dim=(-1))
         
 
@@ -336,17 +363,53 @@ class BetaeExtensionStructuredEmbedding(ERModel):
             sources = torch.cat([b['sources'].unsqueeze(0) for b in hr_batch], axis=0)
             relations = torch.cat([b['relations'].unsqueeze(0) for b in hr_batch], axis=0)
             h, r, _ = self._get_representations(h=sources, r=relations, t=dummy_idx, mode=mode)
-            restriction_maps = torch.cat([tr.unsqueeze(2) for tr in r], dim=2)
-            # move everything to proper device
-            restriction_maps = restriction_maps.to(self.device)
-            h = h.to(self.device)
+            restriction_maps = torch.cat([tr.unsqueeze(2) for tr in r[:2]], dim=2)
 
             nbatch = restriction_maps.shape[0]
+
+            # move everything to proper device
+            restriction_maps = restriction_maps.to(self.device)
+            h = h.to(self.device).reshape(nbatch, -1, self.num_sections)
+            b = r[2].to(self.device).reshape(nbatch, -1, self.num_sections)
             
             scores = self.interaction.score_schur_batched(edge_index, restriction_maps, 
                                                 boundary_vertices, interior_vertices, 
                                                 source_vertices, target_vertices, 
-                                                h.reshape(nbatch, -1, self.num_sections), t, t.shape[-2])
+                                                h, t, b, t.shape[-2])
             return -torch.sum(scores, dim=(-1))
 
+def eye_(tensor: torch.Tensor) -> torch.Tensor:
+    t = torch.eye(tensor.shape[1],tensor.shape[2]).reshape((1, tensor.shape[1], tensor.shape[2]))
+    t = t.repeat(tensor.shape[0], 1, 1)
+    return t
             
+class BetaeExtensionTransE(BetaeExtensionTranslational):
+
+    def __init__(
+        self,
+        *,
+        embedding_dim: int = 50,
+        num_sections: int = 1,
+        scoring_fct_norm: int = 1,
+        entity_initializer: Hint[Initializer] = xavier_uniform_,
+        entity_constrainer: Hint[Constrainer] = functional.normalize,
+        relation_initializer: Hint[Initializer] = xavier_uniform_norm_,
+        relation_constrainer: Hint[Constrainer] = None,
+        regularizer: HintOrType[Regularizer] = OrthogonalSectionsRegularizer,
+        regularizer_kwargs: OptionalKwargs = None,     
+        **kwargs,
+    ) -> None:
+
+        super().__init__(C0_dimension=embedding_dim,
+                        C1_dimension=embedding_dim,
+                        num_sections=num_sections,
+                        scoring_fct_norm=scoring_fct_norm,
+                        entity_initializer=entity_initializer,
+                        entity_constrainer=entity_constrainer,
+                        relation_initializer=relation_initializer,
+                        relation_constrainer=relation_constrainer,
+                        regularizer=regularizer,
+                        regularizer_kwargs=regularizer_kwargs,
+                        restriction_initializer = eye_,
+                        restriction_trainable = False,
+                        **kwargs)
