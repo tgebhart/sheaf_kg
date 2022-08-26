@@ -3,9 +3,9 @@ import argparse
 
 import matplotlib.pyplot as plt
 import pandas as pd
+import torch
 from pykeen.pipeline import pipeline
 from pykeen.triples import TriplesFactory
-from pykeen.training import SLCWATrainingLoop
 from pykeen.typing import LABEL_TAIL
 from pykeen.datasets import Nations, FB15k237, WN18RR
 from sheaf_kg.models.betae_extension_structured_embedding import BetaeExtensionStructuredEmbedding
@@ -16,13 +16,16 @@ from sheaf_kg.data_loader import generate_mapped_triples
 
 DATASET = 'FB15k-237'
 BASE_DATA_PATH = 'KG_data'
-MODEL = 'BetaeExtensionTransE'
+MODEL = 'BetaeExtensionTranslational'
+PARAMETERIZATION = None
 NUM_EPOCHS = 1
-C0_DIM = 16
-C1_DIM = 16
-NUM_SECTIONS = 1
+C0_DIM = 32
+C1_DIM = 32
+NUM_SECTIONS = 32
 RANDOM_SEED = 134
-REGULARIZER_WEIGHT = 0
+TRAINING_BATCH_SIZE = 64
+EVALUATION_BATCH_SIZE = 32
+REGULARIZER_WEIGHT = 0.1
 QUERY_STRUCTURES  = ['1p','2p','3p','2i','3i','pi','ip']
 SAMPLED_ANSWERS = True
 
@@ -59,6 +62,11 @@ def find_model(model):
         return model_map[model]
     raise ValueError(f'model {model} not known')
 
+def find_parameterization(param):
+    if param == 'orthogonal':
+        return torch.nn.utils.parametrizations.orthogonal
+    return None
+
 def get_factories(dataset, query_structures=QUERY_STRUCTURES, 
                 sampled_answers=SAMPLED_ANSWERS):
 
@@ -85,31 +93,31 @@ def get_factories(dataset, query_structures=QUERY_STRUCTURES,
     return train, test, test_queries
 
 def run(model, dataset, num_epochs, random_seed,
-        embedding_dim, c1_dimension=None, num_sections=None,
+        embedding_dim, c1_dimension=None, num_sections=NUM_SECTIONS, reg_weight=REGULARIZER_WEIGHT, 
+        parameterization=PARAMETERIZATION, 
+        training_batch_size=TRAINING_BATCH_SIZE, evaluation_batch_size=EVALUATION_BATCH_SIZE,
         query_structures=QUERY_STRUCTURES, sampled_answers=SAMPLED_ANSWERS):
 
     train_tf, test_tf, test_queries = get_factories(dataset, query_structures=query_structures, 
                                                     sampled_answers=sampled_answers)
     model_class = find_model(model)
-    reg_weight = REGULARIZER_WEIGHT
-
+    parameterization_fun = find_parameterization(parameterization)
     evaluator = BetaeEvaluator(filtered=sampled_answers)
     
     model_kwargs = {}
+    model_kwargs['num_sections'] = num_sections
+    
     if model == 'BetaeExtensionTransE':
         model_kwargs['embedding_dim'] = embedding_dim
-        model_kwargs['num_sections'] = num_sections
     else:
+        model_kwargs['restriction_parametrization'] = parameterization_fun
         model_kwargs['C0_dimension'] = embedding_dim
-        if num_sections is not None:
-            model_kwargs['num_sections'] = num_sections
         if c1_dimension is not None:
-            model_kwargs['C1_dimension'] = c1_dimension 
+            model_kwargs['C1_dimension'] = c1_dimension
     
     # model_kwargs['training_mask_pct'] = 0.1
     train_device = 'cuda'
     evaluate_device = 'cuda'
-    evaluation_batch_size = 32
 
     result = pipeline(
         model=model_class,
@@ -117,7 +125,7 @@ def run(model, dataset, num_epochs, random_seed,
         regularizer=OrthogonalSectionsRegularizer,
         training=train_tf,
         testing=test_tf,
-        training_kwargs={'batch_size':64},
+        training_kwargs={'batch_size':training_batch_size},
         epochs=num_epochs,
         device=train_device,
         random_seed=random_seed,
@@ -125,8 +133,9 @@ def run(model, dataset, num_epochs, random_seed,
 
     mr = result.metric_results.to_df()
     print(mr[mr['Metric'] == 'hits_at_10'])
+    mr['query_structure'] = 'test'
 
-    rdfs = []
+    rdfs = [mr]
     for query_structure in query_structures:
         print(f'evaluating query structure {query_structure}')
         results = evaluator.evaluate(
@@ -144,16 +153,12 @@ def run(model, dataset, num_epochs, random_seed,
     print(rdfs)
 
     # save out
-    savedir = f'data/{dataset}/BetaE/{model}'
+    savedir = f'data/{dataset}/BetaE/{model}/{random_seed}seed_{embedding_dim}C0_{c1_dimension}C1_{num_sections}sec_{parameterization}param_{reg_weight}reg_{num_epochs}epochs'
     if not os.path.exists(savedir):
-        os.mkdirs(savedir)
-    savename = f'{random_seed}seed\
-                _{embedding_dim}C0\
-                _{c1_dimension}C1\
-                _{num_sections}sec\
-                _{reg_weight}reg\
-                _{num_epochs}epochs.csv'
+        os.makedirs(savedir)
+    savename = 'metric_results.csv'
     rdfs.to_csv(os.path.join(savedir, savename))
+    result.save_to_directory(savedir)
 
 
 if __name__ == '__main__':
@@ -161,7 +166,7 @@ if __name__ == '__main__':
     # Training Hyperparameters
     training_args = parser.add_argument_group('training')
     training_args.add_argument('--dataset', type=str, default=DATASET,
-                        choices=['WN18RR','FB15k-237', 'Nations'],
+                        choices=list(dataset_map.keys()),
                         help='dataset (default: Nations)')
     training_args.add_argument('--num-epochs', type=int, default=NUM_EPOCHS,
                         help='number of training epochs')
@@ -174,7 +179,7 @@ if __name__ == '__main__':
     training_args.add_argument('--random-seed', type=int, default=RANDOM_SEED,
                         help='random seed')
     training_args.add_argument('--model', type=str, required=False, default=MODEL,
-                        choices=['MultisectionStructuredEmbedding', 'MultisectionTransE'],
+                        choices=list(model_map.keys()),
                         help='name of model to train')
 
     args = parser.parse_args()

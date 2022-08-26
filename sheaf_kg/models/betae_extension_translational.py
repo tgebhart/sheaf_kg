@@ -89,13 +89,13 @@ class BetaeExtensionTranslational(ERModel):
                     shape=(C1_dimension, C0_dimension),
                     initializer=restriction_initializer,
                     parametrization=restriction_parametrization,
-                    trainable=restriction_trainable
+                    trainable=restriction_trainable,
                 ),
                 dict(
                     shape=(C1_dimension, C0_dimension),
                     initializer=restriction_initializer,
                     parametrization=restriction_parametrization,
-                    trainable=restriction_trainable
+                    trainable=restriction_trainable,
                 ),
                 dict(
                     shape=(C1_dimension,num_sections),

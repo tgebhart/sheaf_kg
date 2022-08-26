@@ -42,8 +42,8 @@ class BetaeExtensionStructuredEmbedding(ERModel):
         regularizer: HintOrType[Regularizer] = OrthogonalSectionsRegularizer,
         regularizer_kwargs: OptionalKwargs = None,
         entity_constrainer_kwargs: Optional[Mapping[str, Any]] = None,
-        relation_initializer: Hint[Initializer] = xavier_uniform_norm_,
-        relation_parametrization: Optional[Callable] = None,
+        restriction_initializer: Hint[Initializer] = xavier_uniform_norm_,
+        restriction_parametrization: Optional[Callable] = None,
         **kwargs,
     ) -> None:
         r"""Initialize SE.
@@ -74,13 +74,13 @@ class BetaeExtensionStructuredEmbedding(ERModel):
             relation_representations_kwargs=[
                 dict(
                     shape=(C1_dimension, C0_dimension),
-                    initializer=relation_initializer,
-                    parametrization=relation_parametrization,
+                    initializer=restriction_initializer,
+                    parametrization=restriction_parametrization,
                 ),
                 dict(
                     shape=(C1_dimension, C0_dimension),
-                    initializer=relation_initializer,
-                    parametrization=relation_parametrization,
+                    initializer=restriction_initializer,
+                    parametrization=restriction_parametrization,
                 ),
             ],
             **kwargs,
