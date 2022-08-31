@@ -104,6 +104,7 @@ class BetaeExtensionTranslational(ERModel):
                 regularizer_kwargs=regularizer_kwargs,
             ),
         ],
+        skip_checks=True, # the shape checker doesn't allow c0_dimension != c1_dimension for translational
             **kwargs,
         )
 

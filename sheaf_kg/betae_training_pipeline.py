@@ -17,9 +17,9 @@ from sheaf_kg.data_loader import generate_mapped_triples
 DATASET = 'FB15k-237'
 BASE_DATA_PATH = 'KG_data'
 MODEL = 'BetaeExtensionTranslational'
-PARAMETERIZATION = 'orthogonal'
+PARAMETERIZATION = None
 NUM_EPOCHS = 1
-C0_DIM = 16
+C0_DIM = 32
 C1_DIM = 16
 NUM_SECTIONS = 1
 RANDOM_SEED = 134
