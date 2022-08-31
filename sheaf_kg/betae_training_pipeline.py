@@ -17,17 +17,18 @@ from sheaf_kg.data_loader import generate_mapped_triples
 DATASET = 'FB15k-237'
 BASE_DATA_PATH = 'KG_data'
 MODEL = 'BetaeExtensionTranslational'
-PARAMETERIZATION = None
+PARAMETERIZATION = 'orthogonal'
 NUM_EPOCHS = 1
-C0_DIM = 32
-C1_DIM = 32
-NUM_SECTIONS = 32
+C0_DIM = 16
+C1_DIM = 16
+NUM_SECTIONS = 1
 RANDOM_SEED = 134
 TRAINING_BATCH_SIZE = 64
 EVALUATION_BATCH_SIZE = 32
 REGULARIZER_WEIGHT = 0.1
 QUERY_STRUCTURES  = ['1p','2p','3p','2i','3i','pi','ip']
 SAMPLED_ANSWERS = True
+SLICE_SIZE = None
 
 model_map = {
     'BetaeExtensionTranslational':BetaeExtensionTranslational,
@@ -94,8 +95,8 @@ def get_factories(dataset, query_structures=QUERY_STRUCTURES,
 
 def run(model, dataset, num_epochs, random_seed,
         embedding_dim, c1_dimension=None, num_sections=NUM_SECTIONS, reg_weight=REGULARIZER_WEIGHT, 
-        parameterization=PARAMETERIZATION, 
-        training_batch_size=TRAINING_BATCH_SIZE, evaluation_batch_size=EVALUATION_BATCH_SIZE,
+        parameterization=PARAMETERIZATION,
+        training_batch_size=TRAINING_BATCH_SIZE, evaluation_batch_size=EVALUATION_BATCH_SIZE, slice_size=SLICE_SIZE,
         query_structures=QUERY_STRUCTURES, sampled_answers=SAMPLED_ANSWERS):
 
     train_tf, test_tf, test_queries = get_factories(dataset, query_structures=query_structures, 
@@ -110,12 +111,11 @@ def run(model, dataset, num_epochs, random_seed,
     if model == 'BetaeExtensionTransE':
         model_kwargs['embedding_dim'] = embedding_dim
     else:
-        model_kwargs['restriction_parametrization'] = parameterization_fun
+        model_kwargs['restriction_parameterization'] = parameterization_fun
         model_kwargs['C0_dimension'] = embedding_dim
         if c1_dimension is not None:
             model_kwargs['C1_dimension'] = c1_dimension
     
-    # model_kwargs['training_mask_pct'] = 0.1
     train_device = 'cuda'
     evaluate_device = 'cuda'
 
@@ -143,7 +143,8 @@ def run(model, dataset, num_epochs, random_seed,
             model=result.model,
             mapped_triples=test_queries[query_structure],
             targets=[LABEL_TAIL],
-            batch_size=evaluation_batch_size
+            batch_size=evaluation_batch_size,
+            slice_size=slice_size
         )
 
         ev_df = results.to_df()
@@ -158,7 +159,10 @@ def run(model, dataset, num_epochs, random_seed,
         os.makedirs(savedir)
     savename = 'metric_results.csv'
     rdfs.to_csv(os.path.join(savedir, savename))
-    result.save_to_directory(savedir)
+    if parameterization is not None:
+        torch.save(result.model.state_dict(), savedir)
+    else:
+        result.save_to_directory(savedir)
 
 
 if __name__ == '__main__':
