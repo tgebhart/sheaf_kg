@@ -24,7 +24,7 @@ experiments = itertools.product(models, datasets, cochain_dims, sections, reg_we
 # filter out experiments from product which do not make sense
 experiments = list(filter(filter_irrelevant, experiments))
 
-for i in range(1,len(experiments)):
+for i in range(len(experiments)):
     e = experiments[i]
     print(f'running experiment {i}/{len(experiments)}', e)
     model = e[0]
