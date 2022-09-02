@@ -95,7 +95,7 @@ def get_factories(dataset, query_structures=QUERY_STRUCTURES,
 
 def run(model, dataset, num_epochs, random_seed,
         embedding_dim, c1_dimension=None, num_sections=NUM_SECTIONS, reg_weight=REGULARIZER_WEIGHT, 
-        parameterization=PARAMETERIZATION,
+        parameterization=PARAMETERIZATION, 
         training_batch_size=TRAINING_BATCH_SIZE, evaluation_batch_size=EVALUATION_BATCH_SIZE, slice_size=SLICE_SIZE,
         query_structures=QUERY_STRUCTURES, sampled_answers=SAMPLED_ANSWERS):
 
@@ -123,6 +123,7 @@ def run(model, dataset, num_epochs, random_seed,
         model=model_class,
         model_kwargs=model_kwargs,
         regularizer=OrthogonalSectionsRegularizer,
+        regularizer_kwargs={"weight": reg_weight},
         training=train_tf,
         testing=test_tf,
         training_kwargs={'batch_size':training_batch_size},
