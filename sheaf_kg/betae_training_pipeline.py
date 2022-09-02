@@ -161,7 +161,7 @@ def run(model, dataset, num_epochs, random_seed,
     savename = 'metric_results.csv'
     rdfs.to_csv(os.path.join(savedir, savename))
     if parameterization is not None:
-        torch.save(result.model.state_dict(), savedir)
+        torch.save(result.model.state_dict(), os.path.join(savedir, 'model.pt'))
     else:
         result.save_to_directory(savedir)
 
