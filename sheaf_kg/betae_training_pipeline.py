@@ -115,7 +115,7 @@ def run(model, dataset, num_epochs, random_seed,
         model_kwargs['C0_dimension'] = embedding_dim
         if c1_dimension is not None:
             model_kwargs['C1_dimension'] = c1_dimension
-    
+        
     train_device = 'cuda'
     evaluate_device = 'cuda'
 
