@@ -16,6 +16,7 @@ from pykeen.typing import Constrainer, Initializer
 from pykeen.regularizers import Regularizer
 from pykeen.typing import LABEL_HEAD, LABEL_RELATION, LABEL_TAIL, \
                         MappedTriples, Target, InductiveMode
+from pykeen.nn.representation import Embedding
 
 from sheaf_kg.interactions.multisection_structured_embedding import BetaeExtensionInteraction
 from sheaf_kg.regularizers.multisection_regularizers import OrthogonalSectionsRegularizer
@@ -43,7 +44,7 @@ class BetaeExtensionStructuredEmbedding(ERModel):
         regularizer_kwargs: OptionalKwargs = None,
         entity_constrainer_kwargs: Optional[Mapping[str, Any]] = None,
         restriction_initializer: Hint[Initializer] = xavier_uniform_norm_,
-        restriction_parametrization: Optional[Callable] = None,
+        restriction_parameterization: Optional[Callable] = None,
         **kwargs,
     ) -> None:
         r"""Initialize SE.
@@ -58,6 +59,13 @@ class BetaeExtensionStructuredEmbedding(ERModel):
         :param kwargs:
             Remaining keyword arguments to forward to :class:`pykeen.models.EntityEmbeddingModel`
         """
+        relation_representation_kwargs = dict(
+                    shape=(C1_dimension, C0_dimension),
+                    initializer=restriction_initializer,
+                    parameterization=restriction_parameterization,
+                )
+        if restriction_parameterization is None:
+            relation_representation_kwargs.pop('parameterization')
         super().__init__(
             interaction=BetaeExtensionInteraction(
                 p=scoring_fct_norm
@@ -70,19 +78,8 @@ class BetaeExtensionStructuredEmbedding(ERModel):
                 regularizer=regularizer,
                 regularizer_kwargs=regularizer_kwargs,
             ),
-            relation_representations=ParameterizedEmbedding,
-            relation_representations_kwargs=[
-                dict(
-                    shape=(C1_dimension, C0_dimension),
-                    initializer=restriction_initializer,
-                    parametrization=restriction_parametrization,
-                ),
-                dict(
-                    shape=(C1_dimension, C0_dimension),
-                    initializer=restriction_initializer,
-                    parametrization=restriction_parametrization,
-                ),
-            ],
+            relation_representations=(Embedding if restriction_parameterization is None else ParameterizedEmbedding),
+            relation_representations_kwargs=[relation_representation_kwargs, relation_representation_kwargs],
             **kwargs,
         )
 
@@ -123,7 +120,7 @@ class BetaeExtensionStructuredEmbedding(ERModel):
             # assume batch is all of the same query structure
             query_structure = hrt_batch[0]['structure']
             hrt_batch = prepare_query_for_prediction(hrt_batch, query_structure, self.device)
-            return self.predict_t_eval(hrt_batch, query_structure=query_structure)
+            return self.predict_t_eval(hrt_batch, query_structure=query_structure, slice_size=slice_size)
 
         if target == LABEL_TAIL:
             if full_batch:
@@ -145,6 +142,7 @@ class BetaeExtensionStructuredEmbedding(ERModel):
     def predict_t_eval(
         self,
         hr_batch: torch.LongTensor,
+        slice_size: Optional[int] = None,
         **kwargs,
     ) -> torch.FloatTensor:
         """Forward pass using right side (tail) prediction for obtaining scores of all possible tails.
@@ -172,7 +170,12 @@ class BetaeExtensionStructuredEmbedding(ERModel):
         """
         self.eval()  # Enforce evaluation mode
         score_fun = self.score_t_batched_eval
-        scores = score_fun(hr_batch, **kwargs)
+        if slice_size is not None:
+            scores = torch.cat([score_fun(hr_batch, tails=smb, **kwargs)for smb in 
+                            torch.split(torch.arange(self.num_entities), slice_size, dim=0)],
+                            dim=-1)
+        else:
+            scores = score_fun(hr_batch, **kwargs)
         if self.predict_with_sigmoid:
             scores = torch.sigmoid(scores)
         return scores

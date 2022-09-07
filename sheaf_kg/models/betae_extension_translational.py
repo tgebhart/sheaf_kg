@@ -16,6 +16,7 @@ from pykeen.typing import Constrainer, Initializer
 from pykeen.regularizers import Regularizer
 from pykeen.typing import LABEL_HEAD, LABEL_RELATION, LABEL_TAIL, \
                         MappedTriples, Target, InductiveMode
+from pykeen.nn.representation import Embedding
 
 from sheaf_kg.interactions.multisection_trans_e import BetaeExtensionInteraction
 from sheaf_kg.regularizers.multisection_regularizers import OrthogonalSectionsRegularizer
@@ -47,7 +48,7 @@ class BetaeExtensionTranslational(ERModel):
         relation_initializer: Hint[Initializer] = xavier_uniform_norm_,
         relation_constrainer: Hint[Constrainer] = None,
         restriction_initializer: Hint[Initializer] = xavier_uniform_norm_,
-        restriction_parametrization: Optional[Callable] = None,
+        restriction_parameterization: Optional[Callable] = None,
         restriction_trainable: bool = True,
         regularizer: HintOrType[Regularizer] = OrthogonalSectionsRegularizer,
         regularizer_kwargs: OptionalKwargs = None,
@@ -73,6 +74,14 @@ class BetaeExtensionTranslational(ERModel):
 
            - OpenKE `implementation of TransE <https://github.com/thunlp/OpenKE/blob/OpenKE-PyTorch/models/TransE.py>`_
         """
+        relation_representation_kwargs = dict(
+                    shape=(C1_dimension, C0_dimension),
+                    initializer=restriction_initializer,
+                    parameterization=restriction_parameterization,
+                    trainable=restriction_trainable
+                )
+        if restriction_parameterization is None:
+            relation_representation_kwargs.pop('parameterization')
         super().__init__(
             interaction=BetaeExtensionInteraction,
             interaction_kwargs=dict(p=scoring_fct_norm),
@@ -83,28 +92,19 @@ class BetaeExtensionTranslational(ERModel):
                 regularizer=regularizer,
                 regularizer_kwargs=regularizer_kwargs,
             ),
-            relation_representations=ParameterizedEmbedding,
+            relation_representations=(Embedding if restriction_parameterization is None else ParameterizedEmbedding),
             relation_representations_kwargs=[
-                dict(
-                    shape=(C1_dimension, C0_dimension),
-                    initializer=restriction_initializer,
-                    parametrization=restriction_parametrization,
-                    trainable=restriction_trainable,
-                ),
-                dict(
-                    shape=(C1_dimension, C0_dimension),
-                    initializer=restriction_initializer,
-                    parametrization=restriction_parametrization,
-                    trainable=restriction_trainable,
-                ),
-                dict(
-                    shape=(C1_dimension,num_sections),
-                    initializer=relation_initializer,
-                    constrainer=relation_constrainer,
-                    regularizer=regularizer,
-                    regularizer_kwargs=regularizer_kwargs,
-                ),
-            ],
+            relation_representation_kwargs,
+            relation_representation_kwargs,       
+            dict(
+                shape=(C1_dimension,num_sections),
+                initializer=relation_initializer,
+                constrainer=relation_constrainer,
+                regularizer=regularizer,
+                regularizer_kwargs=regularizer_kwargs,
+            ),
+        ],
+        skip_checks=True, # the shape checker doesn't allow c0_dimension != c1_dimension for translational
             **kwargs,
         )
 
@@ -145,7 +145,7 @@ class BetaeExtensionTranslational(ERModel):
             # assume batch is all of the same query structure
             query_structure = hrt_batch[0]['structure']
             hrt_batch = prepare_query_for_prediction(hrt_batch, query_structure, self.device)
-            return self.predict_t_eval(hrt_batch, query_structure=query_structure)
+            return self.predict_t_eval(hrt_batch, query_structure=query_structure, slice_size=slice_size)
 
         if target == LABEL_TAIL:
             if full_batch:
@@ -167,6 +167,7 @@ class BetaeExtensionTranslational(ERModel):
     def predict_t_eval(
         self,
         hr_batch: torch.LongTensor,
+        slice_size: Optional[int] = None,
         **kwargs,
     ) -> torch.FloatTensor:
         """Forward pass using right side (tail) prediction for obtaining scores of all possible tails.
@@ -194,7 +195,12 @@ class BetaeExtensionTranslational(ERModel):
         """
         self.eval()  # Enforce evaluation mode
         score_fun = self.score_t_batched_eval
-        scores = score_fun(hr_batch, **kwargs)
+        if slice_size is not None:
+            scores = torch.cat([score_fun(hr_batch, tails=smb, **kwargs)for smb in 
+                        torch.split(torch.arange(self.num_entities), slice_size, dim=0)],
+                        dim=-1)
+        else:
+            scores = score_fun(hr_batch, **kwargs)
         if self.predict_with_sigmoid:
             scores = torch.sigmoid(scores)
         return scores
