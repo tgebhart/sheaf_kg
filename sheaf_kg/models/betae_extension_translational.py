@@ -52,6 +52,7 @@ class BetaeExtensionTranslational(ERModel):
         restriction_trainable: bool = True,
         regularizer: HintOrType[Regularizer] = OrthogonalSectionsRegularizer,
         regularizer_kwargs: OptionalKwargs = None,
+        naive_extension: bool = False,
         **kwargs,
     ) -> None:
         r"""Initialize TransE.
@@ -105,10 +106,11 @@ class BetaeExtensionTranslational(ERModel):
             ),
         ],
         skip_checks=True, # the shape checker doesn't allow c0_dimension != c1_dimension for translational
-            **kwargs,
+        **kwargs,
         )
 
         self.num_sections = num_sections
+        self.naive_extension = naive_extension
 
     def predict(
         self,
@@ -194,7 +196,7 @@ class BetaeExtensionTranslational(ERModel):
             behavior regardless of the use of inverse triples.
         """
         self.eval()  # Enforce evaluation mode
-        score_fun = self.score_t_batched_eval
+        score_fun = self.score_t_batched_naive if self.naive_extension else self.score_t_batched_eval 
         if slice_size is not None:
             scores = torch.cat([score_fun(hr_batch, tails=smb, **kwargs)for smb in 
                         torch.split(torch.arange(self.num_entities), slice_size, dim=0)],
@@ -285,7 +287,6 @@ class BetaeExtensionTranslational(ERModel):
             boundary_vertices = torch.LongTensor([0,1,2])
             source_vertices = torch.LongTensor([0,1])
             target_vertices = torch.LongTensor([2])
-
             
             h, r, t = self._get_representations(h=hr_batch[:, 0, :], r=hr_batch[:, 1, :], t=tails, mode=mode)
             restriction_maps = torch.cat([tr.unsqueeze(2) for tr in r[:2]], dim=2)
@@ -347,14 +348,13 @@ class BetaeExtensionTranslational(ERModel):
             restriction_maps = restriction_maps.to(self.device)
             h = h.to(self.device).reshape(nbatch, -1, self.num_sections)
             b = r[2].to(self.device).reshape(nbatch, -1, self.num_sections)
-            
+
             scores = self.interaction.score_schur_batched(edge_index, restriction_maps, 
                                                 boundary_vertices, interior_vertices, 
                                                 source_vertices, target_vertices, 
                                                 h, t, b, t.shape[-2])
             return -torch.sum(scores, dim=(-1))
         
-
         if query_structure == 'ip':
             edge_index = torch.LongTensor([[0,2],[1,2],[2,3]]).T
             boundary_vertices = torch.LongTensor([0,1,3])
@@ -383,6 +383,69 @@ class BetaeExtensionTranslational(ERModel):
                                                 source_vertices, target_vertices, 
                                                 h, t, b, t.shape[-2])
             return -torch.sum(scores, dim=(-1))
+
+    def score_t_batched_naive(
+        self,
+        hr_batch: torch.LongTensor,
+        *,
+        query_structure: str = '1p',
+        slice_size: Optional[int] = None,
+        mode: Optional[InductiveMode] = None,
+        tails: Optional[torch.LongTensor] = None,
+    ) -> torch.FloatTensor:  # noqa: D102
+        self._check_slicing(slice_size=slice_size)
+        # add broadcast dimension
+        if query_structure == '1p':
+            hr_batch = hr_batch.unsqueeze(dim=1)
+            h, r, t = self._get_representations(h=hr_batch[..., 0], r=hr_batch[..., 1], t=tails, mode=mode)
+            # unsqueeze if necessary
+            if tails is None or tails.ndimension() == 1:
+                t = parallel_unsqueeze(t, dim=0)
+            return repeat_if_necessary(
+                scores=self.interaction.score(h=h, r=r, t=t, slice_size=slice_size, slice_dim=1),
+                representations=self.entity_representations,
+                num=self._get_entity_len(mode=mode) if tails is None else tails.shape[-1],
+            )
+        
+        if query_structure in ['2p', '3p']:
+
+            # r[0] will be of size (nbatch, 2, c0_dim) where the second dimension records the number of 
+            # relations in the path. r[1] will be the same shape but will contain the tail restriction maps.
+            h, r, t = self._get_representations(h=hr_batch[..., 0], r=hr_batch[..., 1:], t=tails, mode=mode)
+            nbatch = h.shape[0]
+            h = h.to(self.device).reshape(nbatch, -1, self.num_sections)
+            t = t.to(self.device).unsqueeze(1)
+            b = r[2].to(self.device).sum(axis=1).reshape(nbatch, -1, self.num_sections)
+
+            return -torch.sum(torch.linalg.norm(h + b - t, dim=(-2))**2, dim=(-1)).T
+
+        if query_structure in ['2i', '3i']:
+            h, r, t = self._get_representations(h=hr_batch[:, 0, :], r=hr_batch[:, 1, :], t=tails, mode=mode)
+            nbatch = h.shape[0]
+
+            # move everything to proper device
+            h = h.to(self.device).sum(axis=1).reshape(nbatch, -1, self.num_sections)
+            t = t.to(self.device).unsqueeze(1)
+            b = r[2].to(self.device).sum(axis=1).reshape(nbatch, -1, self.num_sections)
+            
+            return -torch.sum(torch.linalg.norm(h + b - t, dim=(-2))**2, dim=(-1)).T
+
+        if query_structure in ['pi', 'ip']:
+            
+            dummy_idx = torch.LongTensor([0])
+            _, _, t = self._get_representations(h=dummy_idx, r=dummy_idx, t=tails, mode=mode)
+            t = t.to(self.device).unsqueeze(1)
+            
+            sources = torch.cat([b['sources'].unsqueeze(0) for b in hr_batch], axis=0)
+            relations = torch.cat([b['relations'].unsqueeze(0) for b in hr_batch], axis=0)
+            h, r, _ = self._get_representations(h=sources, r=relations, t=dummy_idx, mode=mode)            
+            nbatch = h.shape[0]
+
+            # move everything to proper device
+            h = h.to(self.device).sum(axis=1).reshape(nbatch, -1, self.num_sections)
+            b = r[2].to(self.device).sum(axis=1).reshape(nbatch, -1, self.num_sections)
+            
+            return -torch.sum(torch.linalg.norm(h + b - t, dim=(-2))**2, dim=(-1)).T
 
 def eye_(tensor: torch.Tensor) -> torch.Tensor:
     t = torch.eye(tensor.shape[1],tensor.shape[2]).reshape((1, tensor.shape[1], tensor.shape[2]))

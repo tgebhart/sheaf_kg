@@ -82,7 +82,7 @@ def Kron_reduction_translational(edge_index,restriction_maps,boundary_vertices,i
     invLUB = torch.linalg.lstsq(LUU, LUB).solution
 
     schur = LBB - torch.transpose(LUB, 1, 2) @ invLUB
-    affine = dU @ invLUB + dB
+    affine = -dU @ invLUB + dB
     return schur, affine
 
 def compute_costs(L,source_vertices,target_vertices,xS,xT,dv):
@@ -127,5 +127,5 @@ def compute_costs_translational(L,affine,source_vertices,target_vertices,xS,xT,b
     xT = xT.unsqueeze(1)
     lin = 2 * torch.sum(xS * (LST @ xT), axis=2)
     quad = torch.sum(xT * (LTT @ xT), axis=2)
-    affine = 2*torch.sum(b * ((affSS @ xS)[None,:,:] + (affTT @ xT)), axis=2)
-    return torch.transpose((const[None, :, :] + lin + quad - affine), 0, 1)
+    affine = 2*torch.sum(b * ((affSS @ xS) + (affTT @ xT)), axis=2)
+    return torch.transpose((const[None, :, :] + lin + quad + affine), 0, 1)

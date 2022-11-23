@@ -1,13 +1,11 @@
 import os
 import argparse
 
-import matplotlib.pyplot as plt
 import pandas as pd
 import torch
 from pykeen.pipeline import pipeline
 from pykeen.triples import TriplesFactory
 from pykeen.typing import LABEL_TAIL
-from pykeen.datasets import Nations, FB15k237, WN18RR
 from sheaf_kg.models.betae_extension_structured_embedding import BetaeExtensionStructuredEmbedding
 from sheaf_kg.models.betae_extension_translational import BetaeExtensionTranslational, BetaeExtensionTransE
 from sheaf_kg.regularizers.multisection_regularizers import OrthogonalSectionsRegularizer
@@ -16,11 +14,11 @@ from sheaf_kg.data_loader import generate_mapped_triples
 
 DATASET = 'FB15k-237'
 BASE_DATA_PATH = 'KG_data'
-MODEL = 'BetaeExtensionTranslational'
+MODEL = 'BetaeExtensionStructuredEmbedding'
 PARAMETERIZATION = None
 NUM_EPOCHS = 1
 C0_DIM = 32
-C1_DIM = 16
+C1_DIM = 32
 NUM_SECTIONS = 1
 RANDOM_SEED = 134
 TRAINING_BATCH_SIZE = 64
@@ -29,34 +27,32 @@ REGULARIZER_WEIGHT = 0.1
 QUERY_STRUCTURES  = ['1p','2p','3p','2i','3i','pi','ip']
 SAMPLED_ANSWERS = True
 SLICE_SIZE = None
+TEST_TYPES = ['easy','hard']
 
 model_map = {
     'BetaeExtensionTranslational':BetaeExtensionTranslational,
     'BetaeExtensionStructuredEmbedding':BetaeExtensionStructuredEmbedding,
-    'BetaeExtensionTransE':BetaeExtensionTransE
-}
-
-dataset_map = {
-    'Nations': Nations(),
-    'FB15k-237': FB15k237(),
-    'WN18RR': WN18RR()
+    'BetaeExtensionTransE':BetaeExtensionTransE,
+    'BetaeNaiveTransE':BetaeExtensionTransE
 }
 
 def find_dataset_betae(dataset):
     return {'train': f'{BASE_DATA_PATH}/{dataset}-betae/train.txt', 
             'validate': f'{BASE_DATA_PATH}/{dataset}-betae/valid.txt', 
             'test': {
-                'answers': f'{BASE_DATA_PATH}/{dataset}-betae/test-easy-answers.pkl', 
-                'queries': f'{BASE_DATA_PATH}/{dataset}-betae/test-queries.pkl',
+                'easy': {
+                    'answers': f'{BASE_DATA_PATH}/{dataset}-betae/test-easy-answers.pkl', 
+                    'queries': f'{BASE_DATA_PATH}/{dataset}-betae/test-queries.pkl',
+                },
+                'hard': {
+                    'answers': f'{BASE_DATA_PATH}/{dataset}-betae/test-hard-answers.pkl', 
+                    'queries': f'{BASE_DATA_PATH}/{dataset}-betae/test-queries.pkl',
+                },
+                
                 'triples': f'{BASE_DATA_PATH}/{dataset}-betae/test.txt'},
             'ent2id': f'{BASE_DATA_PATH}/{dataset}-betae/ent2id.pkl',
             'rel2id': f'{BASE_DATA_PATH}/{dataset}-betae/rel2id.pkl'
             }
-
-def find_dataset(dataset):
-    if dataset in dataset_map:
-        return dataset_map[dataset]
-    raise ValueError(f'dataset {dataset} not known') 
 
 def find_model(model):
     if model in model_map:
@@ -69,7 +65,7 @@ def find_parameterization(param):
     return None
 
 def get_factories(dataset, query_structures=QUERY_STRUCTURES, 
-                sampled_answers=SAMPLED_ANSWERS):
+                sampled_answers=SAMPLED_ANSWERS, test_types=TEST_TYPES):
 
     triples_factory = TriplesFactory
 
@@ -88,7 +84,9 @@ def get_factories(dataset, query_structures=QUERY_STRUCTURES,
         ans = [e2id[a] for a in ans]
         return q, ans
     
-    test_queries = generate_mapped_triples(dstf['test']['queries'], dstf['test']['answers'], 
+    test_queries = {}
+    for test_type in test_types:
+        test_queries[test_type] = generate_mapped_triples(dstf['test'][test_type]['queries'], dstf['test'][test_type]['answers'], 
                                         random_sample=sampled_answers, query_structures=query_structures, 
                                         remap_fun=remap_fun)
     return train, test, test_queries
@@ -97,10 +95,10 @@ def run(model, dataset, num_epochs, random_seed,
         embedding_dim, c1_dimension=None, num_sections=NUM_SECTIONS, reg_weight=REGULARIZER_WEIGHT, 
         parameterization=PARAMETERIZATION, 
         training_batch_size=TRAINING_BATCH_SIZE, evaluation_batch_size=EVALUATION_BATCH_SIZE, slice_size=SLICE_SIZE,
-        query_structures=QUERY_STRUCTURES, sampled_answers=SAMPLED_ANSWERS):
+        query_structures=QUERY_STRUCTURES, sampled_answers=SAMPLED_ANSWERS, test_types=TEST_TYPES):
 
     train_tf, test_tf, test_queries = get_factories(dataset, query_structures=query_structures, 
-                                                    sampled_answers=sampled_answers)
+                                                    sampled_answers=sampled_answers, test_types=test_types)
     model_class = find_model(model)
     parameterization_fun = find_parameterization(parameterization)
     evaluator = BetaeEvaluator(filtered=sampled_answers)
@@ -110,6 +108,9 @@ def run(model, dataset, num_epochs, random_seed,
     
     if model == 'BetaeExtensionTransE':
         model_kwargs['embedding_dim'] = embedding_dim
+    elif model == 'BetaeNaiveTransE':
+        model_kwargs['embedding_dim'] = embedding_dim
+        model_kwargs['naive_extension'] = True
     else:
         model_kwargs['restriction_parameterization'] = parameterization_fun
         model_kwargs['C0_dimension'] = embedding_dim
@@ -136,43 +137,43 @@ def run(model, dataset, num_epochs, random_seed,
     print(mr[mr['Metric'] == 'hits_at_10'])
     mr['query_structure'] = 'test'
 
-    rdfs = [mr]
-    for query_structure in query_structures:
-        print(f'evaluating query structure {query_structure}')
-        results = evaluator.evaluate(
-            device=evaluate_device,
-            model=result.model,
-            mapped_triples=test_queries[query_structure],
-            targets=[LABEL_TAIL],
-            batch_size=evaluation_batch_size,
-            slice_size=slice_size
-        )
-
-        ev_df = results.to_df()
-        ev_df['query_structure'] = query_structure
-        rdfs.append(ev_df)
-    rdfs = pd.concat(rdfs, axis=0)
-    print(rdfs)
-
     # save out
     savedir = f'data/{dataset}/BetaE/{model}/{random_seed}seed_{embedding_dim}C0_{c1_dimension}C1_{num_sections}sec_{parameterization}param_{reg_weight}reg_{num_epochs}epochs'
     if not os.path.exists(savedir):
         os.makedirs(savedir)
-    savename = 'metric_results.csv'
-    rdfs.to_csv(os.path.join(savedir, savename))
     if parameterization is not None:
         torch.save(result.model.state_dict(), os.path.join(savedir, 'model.pt'))
     else:
         result.save_to_directory(savedir)
 
+    savename = 'metric_results_{}.csv'
+    for test_type in test_types:
+        rdfs = [mr]
+        for query_structure in query_structures:
+            print(f'evaluating {test_type} query structure {query_structure}')
+            results = evaluator.evaluate(
+                device=evaluate_device,
+                model=result.model,
+                mapped_triples=test_queries[test_type][query_structure],
+                targets=[LABEL_TAIL],
+                batch_size=evaluation_batch_size,
+                slice_size=slice_size
+            )
+
+            ev_df = results.to_df()
+            ev_df['query_structure'] = query_structure
+            rdfs.append(ev_df)
+        rdfs = pd.concat(rdfs, axis=0)
+        print(rdfs)
+        
+        rdfs.to_csv(os.path.join(savedir, savename.format(test_type)))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='simple PyKeen training pipeline')
     # Training Hyperparameters
     training_args = parser.add_argument_group('training')
     training_args.add_argument('--dataset', type=str, default=DATASET,
-                        choices=list(dataset_map.keys()),
-                        help='dataset (default: Nations)')
+                        help='dataset to run')
     training_args.add_argument('--num-epochs', type=int, default=NUM_EPOCHS,
                         help='number of training epochs')
     training_args.add_argument('--embedding-dim', type=int, default=C0_DIM,
