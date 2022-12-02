@@ -10,7 +10,7 @@ from sheaf_kg.models.betae_extension_structured_embedding import BetaeExtensionS
 from sheaf_kg.models.betae_extension_translational import BetaeExtensionTranslational, BetaeExtensionTransE
 from sheaf_kg.regularizers.multisection_regularizers import OrthogonalSectionsRegularizer
 from sheaf_kg.evaluation.evaluator import BetaeEvaluator
-from sheaf_kg.data_loader import generate_mapped_triples
+from sheaf_kg.data_loader import generate_mapped_triples, generate_mapped_triples_both
 
 DATASET = 'FB15k-237'
 BASE_DATA_PATH = 'KG_data'
@@ -26,8 +26,9 @@ EVALUATION_BATCH_SIZE = 32
 REGULARIZER_WEIGHT = 0.1
 QUERY_STRUCTURES  = ['1p','2p','3p','2i','3i','pi','ip']
 SAMPLED_ANSWERS = True
+MAX_SAMPLES = 1
 SLICE_SIZE = None
-TEST_TYPES = ['easy','hard']
+TEST_TYPES = ['both','easy','hard']
 
 model_map = {
     'BetaeExtensionTranslational':BetaeExtensionTranslational,
@@ -64,8 +65,7 @@ def find_parameterization(param):
         return torch.nn.utils.parametrizations.orthogonal
     return None
 
-def get_factories(dataset, query_structures=QUERY_STRUCTURES, 
-                sampled_answers=SAMPLED_ANSWERS, test_types=TEST_TYPES):
+def get_factories(dataset):
 
     triples_factory = TriplesFactory
 
@@ -75,33 +75,46 @@ def get_factories(dataset, query_structures=QUERY_STRUCTURES,
     test = triples_factory.from_path(dstf['test']['triples'], create_inverse_triples=False, 
                                     entity_to_id=train.entity_to_id, relation_to_id=train.relation_to_id)
 
+    return train, test
+
+def load_test_queries_and_answers(dataset, train, query_structures=QUERY_STRUCTURES, 
+                sampled_answers=SAMPLED_ANSWERS, test_types=TEST_TYPES, max_samples=MAX_SAMPLES):
+
+    dstf = find_dataset_betae(dataset)
+
     # we will also need to remap the test complex queries
     e2id = {int(k):v for k,v in train.entity_to_id.items()}
     r2id = {int(k):v for k,v in train.relation_to_id.items()}
     def remap_fun(q, ans):
-        q['relations'] = q['relations'].apply_(r2id.get)
-        q['sources'] = q['sources'].apply_(e2id.get)
-        ans = [e2id[a] for a in ans]
-        return q, ans
+        rq = q.copy()
+        rq['relations'] = q['relations'].apply_(r2id.get)
+        rq['sources'] = q['sources'].apply_(e2id.get)
+        rans = [e2id[a] for a in ans]
+        return rq, rans
     
     test_queries = {}
     for test_type in test_types:
-        test_queries[test_type] = generate_mapped_triples(dstf['test'][test_type]['queries'], dstf['test'][test_type]['answers'], 
+        if test_type == 'both':
+            test_queries[test_type] = generate_mapped_triples_both(dstf['test']['easy']['queries'], dstf['test']['hard']['queries'], 
+                                                                    dstf['test']['easy']['answers'], dstf['test']['hard']['answers'],
+                                                                    random_sample=sampled_answers, query_structures=query_structures, 
+                                                                    remap_fun=remap_fun, max_samples=max_samples)
+        else:    
+            test_queries[test_type] = generate_mapped_triples(dstf['test'][test_type]['queries'], dstf['test'][test_type]['answers'], 
                                         random_sample=sampled_answers, query_structures=query_structures, 
-                                        remap_fun=remap_fun)
-    return train, test, test_queries
+                                        remap_fun=remap_fun, max_samples=max_samples)
+    return test_queries
 
 def run(model, dataset, num_epochs, random_seed,
         embedding_dim, c1_dimension=None, num_sections=NUM_SECTIONS, reg_weight=REGULARIZER_WEIGHT, 
         parameterization=PARAMETERIZATION, 
         training_batch_size=TRAINING_BATCH_SIZE, evaluation_batch_size=EVALUATION_BATCH_SIZE, slice_size=SLICE_SIZE,
-        query_structures=QUERY_STRUCTURES, sampled_answers=SAMPLED_ANSWERS, test_types=TEST_TYPES):
+        query_structures=QUERY_STRUCTURES, sampled_answers=SAMPLED_ANSWERS, test_types=TEST_TYPES, max_samples=MAX_SAMPLES):
 
-    train_tf, test_tf, test_queries = get_factories(dataset, query_structures=query_structures, 
-                                                    sampled_answers=sampled_answers, test_types=test_types)
+    train_tf, test_tf = get_factories(dataset)
     model_class = find_model(model)
     parameterization_fun = find_parameterization(parameterization)
-    evaluator = BetaeEvaluator(filtered=sampled_answers)
+    evaluator = BetaeEvaluator(filtered=True)
     
     model_kwargs = {}
     model_kwargs['num_sections'] = num_sections
@@ -146,10 +159,14 @@ def run(model, dataset, num_epochs, random_seed,
     else:
         result.save_to_directory(savedir)
 
-    savename = 'metric_results_{}.csv'
+    savename = 'metric_results_{}_{}.csv' if sampled_answers else 'full_metric_results_{}.csv'
     for test_type in test_types:
         rdfs = [mr]
         for query_structure in query_structures:
+            print('test type', test_type)
+            test_queries = load_test_queries_and_answers(dataset, train_tf, query_structures=[query_structure], 
+                                                        sampled_answers=sampled_answers, test_types=[test_type], max_samples=max_samples)
+
             print(f'evaluating {test_type} query structure {query_structure}')
             results = evaluator.evaluate(
                 device=evaluate_device,
@@ -162,11 +179,14 @@ def run(model, dataset, num_epochs, random_seed,
 
             ev_df = results.to_df()
             ev_df['query_structure'] = query_structure
+            print(ev_df[(ev_df['Metric'] == 'inverse_harmonic_mean_rank') & 
+                        (ev_df['Type'] == 'realistic') & 
+                        (ev_df['Side'] == 'tail')])
             rdfs.append(ev_df)
         rdfs = pd.concat(rdfs, axis=0)
         print(rdfs)
         
-        rdfs.to_csv(os.path.join(savedir, savename.format(test_type)))
+        rdfs.to_csv(os.path.join(savedir, savename.format(test_type, max_samples)))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='simple PyKeen training pipeline')
@@ -187,10 +207,14 @@ if __name__ == '__main__':
     training_args.add_argument('--model', type=str, required=False, default=MODEL,
                         choices=list(model_map.keys()),
                         help='name of model to train')
+    training_args.add_argument('--sample-answers', action='store_true',
+                        help='whether to sample the "correct" query answer in test set. \
+                            will result in faster evaluation time but more uncertain performance metrics')
 
     args = parser.parse_args()
 
     run(args.model, args.dataset, args.num_epochs, args.random_seed,
-        args.embedding_dim, c1_dimension=args.c1_dimension, num_sections=args.num_sections)
+        args.embedding_dim, c1_dimension=args.c1_dimension, num_sections=args.num_sections,
+        sampled_answers=args.sample_answers)
 
 

@@ -2,6 +2,10 @@ import random
 import pickle
 import torch
 
+random.seed(0)
+
+QUERY_STRUCTURES = ['1p','2p','3p','2i','3i','pi','ip']
+
 query_name_dict = {('e',('r',)): '1p', 
                     ('e', ('r', 'r')): '2p',
                     ('e', ('r', 'r', 'r')): '3p',
@@ -57,14 +61,9 @@ def tensorize(q, query_structure):
         raise ValueError(f'query structure {query_structure} not implemented')
     t['structure'] = query_structure
     return t
-    
-def generate_mapped_triples(query_loc, answer_loc, query_structures=['1p','2p','3p','2i','3i','ip','pi'],
-                            random_sample=False, filter_fun=None, remap_fun=None):
-    with open(query_loc, 'rb') as f:
-        queries = pickle.load(f)
-    with open(answer_loc, 'rb') as f:
-        answers = pickle.load(f)
 
+def map_triples(queries, answers, 
+                query_structures=QUERY_STRUCTURES, random_sample=False, filter_fun=None, remap_fun=None, max_samples=1):
     mapped_triples = {}
     for query_structure in query_structures:
         print(f'loading query structure {query_structure}')
@@ -82,16 +81,68 @@ def generate_mapped_triples(query_loc, answer_loc, query_structures=['1p','2p','
                     num_filtered += 1
                     continue
             if random_sample and len(ans) > 0:
-                a = random.choice(ans)
+                aa = random.sample(ans, max_samples) if len(ans) > max_samples else random.sample(ans, len(ans))
+            else:
+                aa = ans
+            for a in aa:
                 qtens['target'] = torch.LongTensor([a])
                 qtens['others'] = torch.LongTensor([o for o in ans if o != a])
                 qlist.append(qtens)
+        print(f'filtered {num_filtered} queries of {len(qs)} possible for query {query_structure}')
+        mapped_triples[query_structure] = qlist
+    return mapped_triples
+    
+def generate_mapped_triples(query_loc, answer_loc, query_structures=QUERY_STRUCTURES,
+                            random_sample=False, filter_fun=None, remap_fun=None, max_samples=1):
+    with open(query_loc, 'rb') as f:
+        queries = pickle.load(f)
+    with open(answer_loc, 'rb') as f:
+        answers = pickle.load(f)
+
+    return map_triples(queries, answers, query_structures=query_structures, random_sample=random_sample,    
+                        filter_fun=filter_fun, remap_fun=remap_fun, max_samples=max_samples)
+
+def generate_mapped_triples_both(query_loc_easy, query_loc_hard, answer_loc_easy, answer_loc_hard, 
+                                query_structures=QUERY_STRUCTURES, random_sample=False, filter_fun=None, remap_fun=None, 
+                                max_samples=1):
+    with open(query_loc_easy, 'rb') as f:
+        easy_queries = pickle.load(f)
+    with open(answer_loc_easy, 'rb') as f:
+        easy_answers = pickle.load(f)
+    with open(query_loc_hard, 'rb') as f:
+        hard_queries = pickle.load(f)
+    with open(answer_loc_hard, 'rb') as f:
+        hard_answers = pickle.load(f)
+
+    mapped_triples = {}
+    for query_structure in query_structures:
+        print(f'loading query structure {query_structure}')
+        qs = hard_queries[name_query_dict[query_structure]] # same for easy and hard queries
+
+        num_filtered = 0
+        qlist = []
+        for q in qs:
+            qtens = tensorize(q, query_structure)
+            easy_ans = list(easy_answers[q])
+            num_easy = len(easy_ans)
+            hard_ans = list(hard_answers[q])
+            num_hard = len(hard_ans)
+            ans = hard_ans + easy_ans # combine easy and hard answers
+            if remap_fun is not None:
+                qtens, ans = remap_fun(qtens, ans)
+            if filter_fun is not None:
+                if not filter_fun(qtens, ans):
+                    num_filtered += 1
+                    continue
+            # only evaluate on hard answers (:num_hard)
+            if random_sample and num_hard > 0:
+                aa = random.sample(ans[:num_hard], max_samples) if num_hard > max_samples else random.sample(ans[:num_hard], num_hard)
             else:
-                for index, a in enumerate(ans):
-                    others = ans[:index] + ans[index+1:]
-                    qtens['target'] = torch.LongTensor([a])
-                    qtens['others'] = torch.LongTensor(others)
-                    qlist.append(qtens.copy())
+                aa = ans
+            for a in aa[:num_hard]:
+                qtens['target'] = torch.LongTensor([a])
+                qtens['others'] = torch.LongTensor([o for o in ans if o != a])
+                qlist.append(qtens)
         print(f'filtered {num_filtered} queries of {len(qs)} possible for query {query_structure}')
         mapped_triples[query_structure] = qlist
     return mapped_triples
