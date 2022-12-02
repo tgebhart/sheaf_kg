@@ -8,6 +8,10 @@ put it in the top-level directory, keeping the folder name `KG_data`.
 
 ## Recreate Figures
 
-To recreate the figures, first run each of `naive_experiments.py`, `se_experiments.py`, `transe_experiments.py`, 
-`translational_experiments.py`, `translational_orthogonal_experiments.py`. 
+To recreate the experiment data, first run each of `naive_experiments.py`, `se_experiments.py`, `transe_experiments.py`, 
+`translational_experiments.py`, `se_orthogonal_experiments.py`, and `translational_orthogonal_experiments.py`. 
+
+The results of the above runner scripts  will create data in an opinionated subdirectory structure within the `data` directory.
+This data can then be read in and used to recreate the paper figures. 
+See `format_results.ipynb` for the figure creation code.  
 
